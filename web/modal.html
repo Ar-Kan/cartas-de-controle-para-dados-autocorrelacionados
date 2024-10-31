@@ -1,0 +1,175 @@
+<style>
+#chart-zoom-modal .modal-dialog {
+  width: auto;
+  margin: 10px;
+}
+
+#chart-zoom-modal .chart-image-preview-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
+#chart-zoom-modal .chart-image-preview {
+  width: auto;
+  height: 100%;
+  max-height: 90vh;
+}
+
+.chart-image-wrapper #chart-zoom-button {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.modal-actions {
+  position: absolute;
+  display: flex;
+  justify-content: space-between;
+  flex-direction: row-reverse;
+  width: calc(100vw - 50px);
+}
+
+.modal-actions button {
+  opacity: 0.8;
+}
+
+.modal-actions button:hover:not(:disabled) {
+  opacity: 1;
+}
+</style>
+
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('body').prepend(
+      // Modal component
+      `<div class="modal fade" id="chart-zoom-modal" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-body">
+              <div class="modal-actions">
+                <div>
+                  <!-- Fullscreen button -->
+                  <button type="button" class="btn btn-default btn-sm" id="chart-fullscreen">
+                    <span class="glyphicon glyphicon-resize-full"></span>
+                  </button>
+                  <!-- Close button -->
+                  <button type="button" class="btn btn-default btn-sm" data-dismiss="modal">
+                    <span class="glyphicon glyphicon-remove"></span>
+                  </button>
+                </div>
+                <!-- Navigation buttons -->
+                <div class="modal-navigate">
+                  <button type="button" class="btn btn-default btn-sm" id="chart-zoom-prev">
+                    <span class="glyphicon glyphicon-chevron-left"></span>
+                  </button>
+                  <button type="button" class="btn btn-default btn-sm" id="chart-zoom-next">
+                    <span class="glyphicon glyphicon-chevron-right"></span>
+                  </button>
+                </div>
+              </div>
+              <!-- Chart image -->
+              <div class="chart-image-preview-wrapper">
+                <img src="" class="chart-image-preview" keepaspectratio="true">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`
+    );
+    // Add zoom button on top right of each chart
+    $('p>img.chart-image').each(function(index) {
+      $(this).wrap('<div class="chart-image-wrapper" style="position: relative;"></div>');
+      // Add data attribute to identify chart index
+      $(this).attr('data-chart-index', index);
+      // Button to zoom in
+      $(this).parent().append(
+        `<button type="button" id="chart-zoom-button" class="btn btn-default btn-sm" data-chart-index="${index}">
+          <span class="glyphicon glyphicon-zoom-in"></span>
+        </button>`
+      );
+      // Chart click event
+      $(this).siblings('#chart-zoom-button').on('click', function() {
+        var chartIndex = $(this).data('chart-index');
+        $(`img.chart-image-preview`).attr('src', $(`img.chart-image[data-chart-index=${chartIndex}]`).attr('src'));
+        $(`img.chart-image-preview`).attr('data-chart-index', chartIndex);
+        updateNavButtonsState();
+        // Remove class to avoid fullscreen
+        removeFullscreen();
+        // Show modal
+        $('#chart-zoom-modal').modal('show');
+      });
+    });
+    // Fullscreen button
+    $('#chart-fullscreen').on('click', function() {
+      toggleFullScreen();
+    });
+    // Modal navigate buttons
+    $('#chart-zoom-prev').on('click', function() {
+      showPrevChart();
+    });
+    $('#chart-zoom-next').on('click', function() {
+      showNextChart();
+    });
+    // Modal arrow keys to navigate charts
+    $(document).keydown(function(e) {
+      if ($('#chart-zoom-modal').is(':visible')) {
+        if (e.keyCode == 37) {
+          showPrevChart();
+          e.preventDefault();
+        } else if (e.keyCode == 39) {
+          showNextChart();
+          e.preventDefault();
+        }
+      }
+    });
+    function removeFullscreen() {
+      $(`img.chart-image-preview`).removeClass('fullscreen');
+      $(`img.chart-image-preview`).css('max-height', '90vh');
+      $('#chart-fullscreen').find('span').removeClass('glyphicon-resize-small').addClass('glyphicon-resize-full');
+    }
+    function addFullscreen() {
+      $(`img.chart-image-preview`).addClass('fullscreen');
+      $(`img.chart-image-preview`).css('max-height', 'none');
+      $('#chart-fullscreen').find('span').removeClass('glyphicon-resize-full').addClass('glyphicon-resize-small');
+    }
+    function toggleFullScreen(fullScreenState) {
+      if ($(`img.chart-image-preview`).hasClass('fullscreen')) {
+        removeFullscreen();
+      } else {
+        addFullscreen();
+      }
+    }
+    function showPrevChart() {
+      var chartIndex = parseInt($(`img.chart-image-preview`).attr('data-chart-index'));
+      if (chartIndex > 0) {
+        chartIndex -= 1;
+        $(`img.chart-image-preview`).attr('src', $(`img.chart-image[data-chart-index=${chartIndex}]`).attr('src'));
+        $(`img.chart-image-preview`).attr('data-chart-index', chartIndex);
+        updateNavButtonsState();
+      }
+    }
+    function showNextChart() {
+      var chartIndex = parseInt($(`img.chart-image-preview`).attr('data-chart-index'));
+      if (chartIndex < $('img.chart-image').length - 1) {
+        chartIndex += 1;
+        $(`img.chart-image-preview`).attr('src', $(`img.chart-image[data-chart-index=${chartIndex}]`).attr('src'));
+        $(`img.chart-image-preview`).attr('data-chart-index', chartIndex);
+        updateNavButtonsState();
+      }
+    }
+    // Disable nav buttons if at the end
+    function updateNavButtonsState() {
+      var chartIndex = parseInt($(`img.chart-image-preview`).attr('data-chart-index'));
+      if (chartIndex == 0) {
+        $('#chart-zoom-prev').prop('disabled', true);
+      } else {
+        $('#chart-zoom-prev').prop('disabled', false);
+      }
+      if (chartIndex == $('img.chart-image').length - 1) {
+        $('#chart-zoom-next').prop('disabled', true);
+      } else {
+        $('#chart-zoom-next').prop('disabled', false);
+      }
+    }
+  });
+</script>

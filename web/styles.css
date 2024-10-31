@@ -1,0 +1,22 @@
+body {
+  font-size: 15px;
+}
+
+.table {
+  font-size: 12px;
+}
+
+.table caption {
+  font-size: 13px;
+  color: gray;
+  font-weight: 600;
+}
+
+p {
+  text-align: justify;
+  text-justify: distribute;
+}
+
+.bg-danger:not(#dummy) {
+  background-color: #f9bdbb;
+}

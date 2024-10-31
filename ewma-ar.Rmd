@@ -1,0 +1,358 @@
+---
+title: "CC para resíduos AR(1)"
+output:
+  html_document:
+    df_print: paged
+    theme: paper
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: true
+    code_folding: hide
+    css:
+      - ./web/styles.css
+---
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+Sys.setenv(lang = "en_US")
+set.seed(1)
+```
+
+
+```{r include-html, message=FALSE, include=FALSE}
+library(htmltools, quietly = T, warn.conflicts = F)
+includeHTML("web/modal.html")
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2, quietly = T, warn.conflicts = F)
+library(forecast, quietly = T, warn.conflicts = F) # plot ts objects
+library(knitr, quietly = T, warn.conflicts = F)
+library(grid, quietly = T, warn.conflicts = F) # textGrob
+library(gridExtra, quietly = T, warn.conflicts = F) # grid.arrange
+library(latex2exp, quietly = T, warn.conflicts = F) # latex expressions
+library(tidyr, quietly = T, warn.conflicts = F)
+library(dplyr, quietly = T, warn.conflicts = F)
+
+source("scripts/arima_funcs.R")
+source("scripts/plot_themes.R")
+source("scripts/amostras.R")
+```
+
+```{r}
+knitr::opts_chunk$set(
+  out.height = "\\textheight",
+  out.width = "\\textwidth",
+  out.extra = 'keepaspectratio=true class="chart-image"',
+  fig.align = "center"
+)
+
+```
+
+
+# EWMA-AR
+
+Minimizando a soma dos quadrados dos resíduos para encontrar o melhor valor de $\lambda$.
+
+Temos que $\lambda \in (0, 1]$, além disso, a previsão para a observação $x_{t+1}$ é dada por $\hat{x}_{t+1}(t)=z_{t} = \lambda x_t + (1 - \lambda) z_{t-1}$.
+E, segundo Montgomery, Eq. 10.16, temos que os erros de previsão são dados por $e_t = x_t - \hat{x}_t(t-1)$.
+
+Ou, de outra forma
+$$\min\big(\underset{\lambda\in(0,1]}{\arg\min}\,\text{Err}(\lambda)\big)$$
+onde $\text{Err}(\lambda) = \sum_{t=1}^{n} e_t^2$.
+
+
+```{r message=FALSE, warning=FALSE}
+lambdas_verificados <- c()
+soma_quadrados <- c()
+verifica_lambda <- function(lambda) {
+  ewma_ <- ewma(amostra_inicial$serie, lambda = lambda)
+  ewma_resid <- ewma_residuos(amostra_inicial$serie, ewma_)
+  soma <- sum(ewma_resid^2)
+  lambdas_verificados <<- c(lambdas_verificados, lambda)
+  soma_quadrados <<- c(soma_quadrados, soma)
+  soma
+}
+
+
+lambda_otimo <- optimize(verifica_lambda, c(0.000001, 1))
+lambdas_df <- data.frame(lambda = lambdas_verificados, erro = soma_quadrados)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+ggplot(data = lambdas_df) +
+  geom_line(aes(x = lambda, y = erro)) +
+  geom_vline(xintercept = lambda_otimo$minimum, linetype = "dashed", color = "red") +
+  annotate("text", x = lambda_otimo$minimum, y = 0,
+           label = TeX(sprintf("$\\lambda=%.3f$", lambda_otimo$minimum)), color = "red",
+           hjust = -0.1, vjust = -0.2, na.rm = T, angle = 90) +
+  labs(x = TeX("$\\lambda$"), y = "Soma dos quadrados dos resíduos") +
+  ggtitle(TeX("Soma dos quadrados dos resíduos para diferentes valores de $\\lambda$ com o modelo ARIMA")) +
+  theme.base
+```
+
+
+Segundo Montgomery, podemos estimar o valor de $\sigma^2$ para o modelo EWMA-AR como $\sigma^2 = \frac{\sum (\text{err}_i^2|_\lambda)}{n}$. Onde $\text{err}|_\lambda$ são os resíduos do modelo EWMA-AR para o melhor valor de $\lambda$ encontrado.
+
+
+
+```{r}
+sigma2_lambda <- lambda_otimo$objective / PARAMETROS$n_h0
+sigma2_sd <- amostra_inicial$sd_res
+
+tabela_estatistivas_sigma2 <- function() {
+  tabela <- data.frame(
+    "modelo" = c("sd(modelo)", "min(Err)"),
+    "lambda" = c(NA, lambda_otimo$minimum),
+    "erro" = c(sum(amostra_inicial$residuos^2), lambda_otimo$objective),
+    "sigma2" = c(sigma2_sd, sigma2_lambda)
+  )
+  colnames(tabela) <- c("Modelo", "$\\lambda$", "$\\sum \\text{Err}^2$", "$\\sigma^{2}$")
+  tabela
+}
+
+kable(
+  tabela_estatistivas_sigma2(),
+  caption = "Comparação entre estimativas de $\\sigma^2$",
+  align = 'c',
+  digits = 3
+)
+```
+
+
+## CC's para EWMA-AR
+
+### Seleção desonesta
+
+Foi escolhido um valor para $\lambda$ de 0.2, pois o valor ótimo encontrado foi 0 🫠. Esse valor foi escolhido pois, na amostra subsequente com $\phi_0 = 0.2$ -- que é o $\phi_0$ da amostra inicial --, é o menor valor decimal que não gera nenhum ponto fora de controle.
+
+Por esse motivo, não foram usadas as estatísticas encontradas a partir da otimização do de $\lambda$, i.e., $\sigma^2$ e $\lambda$.
+
+### Sobre o $\lambda$
+
+Sabe-se que o valor de $\lambda$ é um valor de suavização, ou seja, quanto mais próximo de 1, mais suavizado é o modelo. E, quanto mais próximo de 0, mais sensível é o modelo, ou seja, quando $\lambda$ se aproxima de 0, o intervalo que denota a região onde a série está em controle se torna mais estreito.
+
+
+```{r}
+df_cc <- data.frame()
+
+lambda_ <- 0.2
+for (i in 1:n_simulacoes) {
+  observacao <- as.numeric(amostras_subsequentes[[i]])
+  phi_0 <- phi_0_para_amostras_seguintes[[i]]
+  ewma_ <- ewma(observacao, lambda = lambda_, x0 = amostra_inicial$xn)
+  ewma_resid <- ewma_residuos(observacao, ewma_)
+  n <- length(ewma_resid)
+  limites <- 3 * sigma2_sd # * sqrt((lambda_ * (1 - (1 - lambda_)^(2 * 1:n))) / (2 - lambda_))
+  df <- data.frame(
+    "phi_0" = phi_0,
+    "amostra" = 1:n,
+    "observacao" = observacao,
+    "residuos" = ewma_resid,
+    "ewma" = ewma_,
+    "limite_inferior" = ewma_ - limites,
+    "limite_superior" = ewma_ + limites
+  )
+  df_cc <- rbind(df_cc, df)
+}
+```
+
+Olhando para a CC para $\phi_0 = 0.2$, que é o valor real de $\phi_0$.
+
+Não ficou igual ao do livro 🥹
+
+```{r}
+ggplot(data = df_cc %>% filter(phi_0 == 0.2)) +
+  geom_line(aes(x = amostra, y = limite_inferior, color = "Limite Inferior"), linetype = "dashed") +
+  geom_line(aes(x = amostra, y = limite_superior, color = "Limite Superior"), linetype = "dashed") +
+  geom_line(aes(x = amostra, y = observacao, color = "Amostra")) +
+  geom_line(aes(x = amostra, y = ewma, color = "EWMA")) +
+  geom_point(data = . %>% filter(observacao < limite_inferior | observacao > limite_superior),
+             aes(x = amostra, y = observacao, color = "Fora de controle"), size = 2) +
+  labs(x = "Observação", y = "Caracterísitca", color = "Legenda") +
+  scale_color_manual(values = c(
+    "Amostra" = "black",
+    "EWMA" = "blue",
+    "Limite Inferior" = "red",
+    "Limite Superior" = "red",
+    "Fora de controle" = "red"
+  )) +
+  ggtitle(TeX("EWMA-AR(1) - $\\phi_0 = 0.2$")) +
+  theme.base
+
+```
+
+
+```{r}
+ggplot(data = df_cc) +
+  geom_line(aes(x = amostra, y = limite_inferior), linetype = "dashed", color = "red", alpha = 0.6) +
+  geom_line(aes(x = amostra, y = limite_superior), linetype = "dashed", color = "red", alpha = 0.6) +
+  geom_line(aes(x = amostra, y = observacao)) +
+  geom_point(data = . %>% filter(observacao < limite_inferior | observacao > limite_superior),
+             aes(x = amostra, y = observacao), color = "red", alpha = 0.6) +
+  labs(x = "Amostra", y = "Característica") +
+  ggtitle("EWMA-AR(1)") +
+  theme.base +
+  facet_wrap(~phi_0)
+```
+
+Olhando agora para proporção de amostras fora de controle para cada $\phi_0$.
+
+```{r}
+df_fora_controle <- df_cc %>% group_by(phi_0) %>%
+  summarise(
+    "quantidade" = sum(observacao < limite_inferior | observacao > limite_superior),
+    "fora_controle" = 100 * sum(observacao < limite_inferior | observacao > limite_superior) / n()
+  )
+
+kable(
+  (function() {
+    tabela <- df_fora_controle
+    colnames(tabela) <- c("$\\phi_0$", "Amostras fora de controle", "Proporção (%)")
+    tabela
+  })(),
+  caption = "Proporção de amostras fora de controle para CC EWMA-AR(1)",
+  align = 'c',
+  digits = 2
+)
+
+ggplot(data = df_fora_controle, aes(x = phi_0, y = fora_controle)) +
+  geom_line() +
+  labs(x = TeX("$\\phi_0$"), y = "Proporção (%)") +
+  ggtitle("Proporção de amostras fora de controle para CC EWMA-AR(1)") +
+  theme.base
+
+```
+
+
+## Extra
+
+Talvez possamos estimar $\lambda$ utilizando a amostra inicial, ou seja, encontrar o maior valor de $\lambda$ tal que que não há nenhuma amostra fora de controle.
+
+Vamos verificar isso plotando vários gráficos de controle para diferentes valores de $\lambda$.
+
+```{r}
+computa_ewma_do_meu_lambda <- function(dados, lambda, pos_inicial = 1) {
+  ewma_ <- ewma(dados, lambda = ifelse(0, 0.001, lambda))
+  ewma_resid <- ewma_residuos(amostra_inicial$serie, ewma_)
+  
+  n <- length(dados)
+  limites <- 3 * sigma2_sd * sqrt((lambda * (1 - (1 - lambda)^(2 * 1:n))) / (2 - lambda))
+  data.frame(
+    lambda = lambda,
+    observacao = as.numeric(dados),
+    amostra = 1:n,
+    ewma = ewma_,
+    residuos = ewma_resid,
+    li = ewma_ - limites,
+    ls = ewma_ + limites
+  )
+}
+
+# computa_ewma_do_meu_lambda(amostra_inicial$serie, 0.2)
+```
+
+
+```{r}
+meus_lambdas_df <- data.frame()
+
+for (lambda in seq(0, 1, 0.2)) {
+  df <- computa_ewma_do_meu_lambda(amostra_inicial$serie, lambda)
+  meus_lambdas_df <- rbind(meus_lambdas_df, df)
+}
+
+ggplot(data = meus_lambdas_df) +
+  geom_line(aes(x = amostra, y = li, color = "Limite Inferior")) +
+  geom_line(aes(x = amostra, y = ls, color = "Limite Superior")) +
+  geom_line(aes(x = amostra, y = observacao, color = "Amostra")) +
+  geom_line(aes(x = amostra, y = ewma, color = "EWMA")) +
+  geom_point(data = . %>% filter(observacao < li | observacao > ls),
+             aes(x = amostra, y = observacao, color = "Fora de controle"), size = 2) +
+  labs(x = "Observação", y = "Caracterísitca", color = "Legenda") +
+  scale_color_manual(
+    values = c(
+      "Limite Inferior" = adjustcolor("red", alpha.f = 0.8),
+      "Limite Superior" = adjustcolor("red", alpha.f = 0.8),
+      "Amostra" = adjustcolor("black", alpha.f = 0.5),
+      "EWMA" = "blue",
+      "Fora de controle" = "red"
+    )
+  ) +
+  labs(
+    title = TeX("Efeito dos limites para diferentes valores de $\\lambda$"),
+    subtitle = "CC EWMA sobre amostra inicial"
+  ) +
+  theme.base +
+  facet_wrap(~lambda)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+meus_lambdas_verificados <- c()
+minhas_proporcoes_fora_de_controle <- c()
+verifica_meu_lambda <- function(lambda) {
+  ewma <- computa_ewma_do_meu_lambda(amostra_inicial$serie, lambda)
+  
+  proporcao <- 100 * sum(
+    length(amostra_inicial$serie[amostra_inicial$serie < ewma$li | amostra_inicial$serie > ewma$ls])
+  ) / PARAMETROS$n_h0
+  meus_lambdas_verificados <<- c(meus_lambdas_verificados, lambda)
+  minhas_proporcoes_fora_de_controle <<- c(minhas_proporcoes_fora_de_controle, proporcao)
+  proporcao
+}
+
+
+meu_lambda_otimo <- optimize(verifica_meu_lambda, c(0, 1))
+meus_lambdas_df <- data.frame(lambda = meus_lambdas_verificados, erro = minhas_proporcoes_fora_de_controle)
+
+ggplot(data = meus_lambdas_df) +
+  geom_line(aes(x = lambda, y = erro)) +
+  geom_vline(xintercept = meu_lambda_otimo$minimum, linetype = "dashed", color = "red") +
+  annotate("text", x = meu_lambda_otimo$minimum, y = 0,
+           label = TeX(sprintf("$\\lambda=%.3f$", meu_lambda_otimo$minimum)), color = "red",
+           hjust = -0.1, vjust = -0.2, na.rm = T, angle = 90) +
+  labs(x = TeX("$\\lambda$"), y = "Proporção de amostras fora de controle (%)") +
+  ggtitle(TeX("Proporção de amostras fora de controle para diferentes valores de $\\lambda$ com o modelo ARIMA")) +
+  theme.base
+```
+
+```{r}
+df_cc_meu_lambda <- data.frame()
+meu_lambda <- meu_lambda_otimo$minimum
+erro_sobre_amostra_inicial <- ewma_residuos(amostra_inicial$serie, ewma(amostra_inicial$serie, lambda = meu_lambda))
+
+sigma2_meu_lambda <- sum(erro_sobre_amostra_inicial^2) / PARAMETROS$n_h0
+
+for (i in 1:n_simulacoes) {
+  observacao <- as.numeric(amostras_subsequentes[[i]])
+  phi_0 <- phi_0_para_amostras_seguintes[[i]]
+  df <- computa_ewma_do_meu_lambda(observacao, meu_lambda, 101)
+  df$phi_0 <- phi_0
+  df_cc_meu_lambda <- rbind(df_cc_meu_lambda, df)
+}
+
+ggplot(data = df_cc_meu_lambda) +
+  geom_line(aes(x = amostra, y = li, color = "Limite Inferior")) +
+  geom_line(aes(x = amostra, y = ls, color = "Limite Superior")) +
+  geom_line(aes(x = amostra, y = observacao, color = "Amostra")) +
+  geom_point(data = . %>% filter(observacao < li | observacao > ls),
+             aes(x = amostra, y = observacao, color = "Fora de controle"), size = 2) +
+  labs(x = "Observação", y = "Caracterísitca", color = "Legenda") +
+  scale_color_manual(
+    values = c(
+      "Limite Inferior" = adjustcolor("red", alpha.f = 0.4),
+      "Limite Superior" = adjustcolor("red", alpha.f = 0.4),
+      "Amostra" = adjustcolor("black", alpha.f = 0.5),
+      "Fora de controle" = "red"
+    )
+  ) +
+  labs(
+    title = TeX("Efeito dos limites para o valor de $\\lambda$ ótimo"),
+    subtitle = "CC EWMA sobre amostra inicial"
+  ) +
+  theme.base +
+  facet_wrap(~phi_0)
+```
+
