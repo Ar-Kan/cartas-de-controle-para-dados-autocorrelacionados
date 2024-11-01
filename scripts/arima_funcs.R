@@ -50,7 +50,7 @@ ewma_residuos <- function(dados, ewma) {
   n <- length(dados)
   residuos <- numeric(n)
   residuos[1] <- dados[1]
-  for (i in 2:final) {
+  for (i in 2:n) {
     residuos[i] <- dados[i] - ewma[i - 1]
   }
   return(residuos)

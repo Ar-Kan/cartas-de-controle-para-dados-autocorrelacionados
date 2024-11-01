@@ -1,0 +1,336 @@
+---
+title: "CC para resíduos βAR(1)"
+output:
+  html_document:
+    df_print: paged
+    theme: paper
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: true
+    code_folding: hide
+---
+
+```{r include-html, message=FALSE, include=FALSE}
+Sys.setenv(lang = "en_US")
+Sys.setlocale("LC_ALL", "en_US.UTF-8")
+
+knitr::opts_chunk$set(
+  out.height = "100%",
+  out.width = "100%",
+  out.extra = 'keepaspectratio=true class="chart-image"',
+  fig.align = "center"
+)
+library(htmltools, quietly = T, warn.conflicts = F)
+includeCSS("web/styles.css")
+includeHTML("web/modal.html")
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2, quietly = T, warn.conflicts = F)
+library(plotly, quietly = T, warn.conflicts = F) # interactive plots
+library(forecast, quietly = T, warn.conflicts = F) # plot ts objects
+library(knitr, quietly = T, warn.conflicts = F)
+library(grid, quietly = T, warn.conflicts = F) # textGrob
+library(gridExtra, quietly = T, warn.conflicts = F) # grid.arrange
+library(latex2exp, quietly = T, warn.conflicts = F) # latex expressions
+library(tidyr, quietly = T, warn.conflicts = F)
+library(dplyr, quietly = T, warn.conflicts = F)
+library(purrr, quietly = T, warn.conflicts = F)
+library(BTSR, quietly = T, warn.conflicts = F)
+library(qcc, quietly = T, warn.conflicts = F)
+
+source("scripts/plot_themes.R")
+```
+# Carta EWMA
+
+## Parâmetros do modelo
+
+```{r, class.source = 'fold-show'}
+nH0 <- 100
+nH1 <- 200
+phi_parametro <- 0.2
+
+coeficientes <- function(phi) {
+  # βARMA: the model from Rocha and Cribari-Neto (2009, 2017)
+  #        is obtained by setting coefs$d = 0 and d = FALSE and error.scale = 1 (predictive scale)
+  list(alpha = 0, beta = NULL, phi = phi, theta = NULL, d = 0, nu = 20)
+}
+
+```
+
+```{r, class.source = 'fold-show'}
+# Função para forçar a execução de `BARFIMA.extract` até que ela funcione
+so_quero_que_funcione <- function(func, debug = T, max = 1000, ...) {
+  FINALMENTE <- F
+  contador <- 0
+  
+  while (!FINALMENTE) {
+    contador <- contador + 1
+    if (debug) print(paste("Tentativa:", contador))
+    
+    resultado <- tryCatch({
+      func(...)
+    }, error = function(err) {
+      if (contador >= max) {
+        stop("Deu ruim, número máximo de tentativas atingido")
+      }
+      
+      if (any(grepl("\\.btsr\\.extract\\(", deparse(err$trace$call)))) {
+        # Ignora erro de extração de resíduos
+        return(NULL)
+      }
+      
+      stop(err)
+    })
+    
+    if (!is.null(resultado)) {
+      FINALMENTE <- T
+    }
+  }
+  
+  return(resultado)
+}
+```
+
+
+```{r, class.source = 'fold-show'}
+ewma_qcc <- function(amostra_inicial, lambda, amostra_subsequente) {
+  ew <- ewma(amostra_inicial, lambda = lambda, nsigmas = 3, plot = F, newdata = amostra_subsequente)
+  
+  registros <- (nH0 + 1):(nH0 + nH1)
+  list(
+    ewma = as.numeric(ew$y[registros]),
+    LI = ew$limits[, 1][registros],
+    LS = ew$limits[, 2][registros]
+  )
+}
+```
+
+
+## Simulação de amostras subsequentes
+
+```{r amostras-subsequentes, class.source = 'fold-show'}
+gera_amostras_subsequentes <- function() {
+  lambda <- 0.2
+  
+  coefs <- coeficientes(phi_parametro)
+  amostra_controle <- BARFIMA.sim(
+    n = nH0,
+    coefs = coefs,
+    error.scale = 1,
+    complete = F,
+    seed = 1337
+  )
+  
+  ultima_observacao <- amostra_controle[nH0]
+  fit <- BARFIMA.fit(yt = amostra_controle, start = list(alpha = 0, nu = 20, phi = 0.1), p = 1, report = F)
+  phi_estimado <- fit$coefficients["phi"][[1]]
+  residuos_controle <- BARFIMA.extract(yt = amostra_controle, coefs = coeficientes(phi_estimado))$error
+  
+  data.frame(
+      novo_phi = seq(0, 0.8, by = 0.1)
+    ) %>%
+    rowwise() %>%
+    mutate(
+      observacao = list(1:nH1),
+      dados = list(BARFIMA.sim(
+        n = nH1,
+        coefs = coeficientes(novo_phi),
+        y.start = ultima_observacao,
+        error.scale = 1,
+        complete = F,
+        seed = 1337
+      )),
+      residuos = list(
+        BARFIMA.extract(yt = dados, coefs = coefs)$error
+      ),
+      qcc = list(ewma_qcc(residuos_controle, lambda, residuos)),
+      ewma = list(qcc$ewma),
+      LI = list(qcc$LI),
+      LS = list(qcc$LS),
+      fora_de_controle = list(ewma < LI | ewma > LS),
+      total_fora_de_controle = sum(fora_de_controle),
+      fracao_fora_de_controle = total_fora_de_controle / nH1
+    )
+}
+
+
+amostras_subsequentes <- so_quero_que_funcione(gera_amostras_subsequentes)
+```
+
+```{r}
+amostras_subsequentes %>%
+  group_by(novo_phi) %>%
+  summarise(
+    mean = mean(fracao_fora_de_controle),
+    .groups = "drop"
+  )
+```
+
+
+### Cartas
+
+```{r message=FALSE, warning=FALSE}
+ggplotly(
+amostras_subsequentes %>%
+    unnest(
+      cols = c(novo_phi, observacao, ewma, LI, LS)
+    ) %>%
+    ggplot() +
+    geom_line(aes(x = observacao, y = LI, color = "Limite Inferior"), linetype = "dashed") +
+    geom_line(aes(x = observacao, y = LS, color = "Limite Superior"), linetype = "dashed") +
+    geom_line(aes(x = observacao, y = ewma, color = "EWMA")) +
+    geom_point(data = . %>% filter(ewma < LI | ewma > LS),
+               aes(x = observacao, y = ewma, color = "Fora de controle"), size = 2) +
+    labs(x = "Observação", y = "Caracterísitca", color = "Legenda") +
+    scale_color_manual(
+      values = c(
+        "Limite Inferior" = adjustcolor("red", alpha.f = 0.4),
+        "Limite Superior" = adjustcolor("red", alpha.f = 0.4),
+        "EWMA" = "black",
+        "Fora de controle" = "red"
+      )
+    ) +
+    labs(
+      title = "EWMA para resíduos βAR(1), com λ = 0.2",
+    ) +
+    theme.base +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_blank()
+    ) +
+    facet_wrap(~novo_phi)
+) %>%
+  plotly.base
+
+```
+
+
+## Simulação de Monte Carlo
+
+
+```{r monte-carlo, class.source = 'fold-show'}
+amostras_monte_carlo_gerador <- function(){
+  numero_de_execucoes <- 100
+  
+  expand.grid(
+    k = 1:numero_de_execucoes,
+    novo_phi = seq(0.2, 0.6, by = 0.1),
+    lambda = seq(0.1, 0.4, by = 0.1)
+  ) %>%
+  mutate(
+    id = row_number()
+  ) %>%
+  rowwise() %>%
+  mutate(
+    amostra_controle = list(BARFIMA.sim(
+      n = nH0,
+      coefs = coeficientes(phi_parametro),
+      error.scale = 1,
+      complete = F,
+      seed = id
+    )),
+    ultima_observacao = amostra_controle[nH0],
+    phi_estimado = BARFIMA.fit(
+      yt = amostra_controle,
+      start = list(alpha = 0, nu = 20, phi = 0.1),
+      p = 1,
+      report = F
+    )$coefficients["phi"][[1]],
+    residuos_controle = list(
+      BARFIMA.extract(
+        yt = amostra_controle,
+        coefs = coeficientes(phi_estimado)
+      )$error
+    ),
+    dados = list(BARFIMA.sim(
+      n = nH1,
+      coefs = coeficientes(novo_phi),
+      y.start = ultima_observacao,
+      error.scale = 1,
+      complete = F,
+      seed = id + 1337E4
+    )),
+    residuos = list(
+      BARFIMA.extract(
+        yt = dados,
+        coefs = coeficientes(phi_estimado),
+        llk = F,
+        info = F
+      )$error
+    ),
+    qcc = list(ewma_qcc(residuos_controle, lambda, residuos)),
+    ewma = list(qcc$ewma),
+    LI = list(qcc$LI),
+    LS = list(qcc$LS),
+    fora_de_controle = list(ewma < LI | ewma > LS),
+    total_fora_de_controle = sum(fora_de_controle, na.rm = TRUE),
+    fracao_fora_de_controle = total_fora_de_controle / nH1
+  )
+}
+
+if (file.exists("cache_simulacao_ewma.RData")) {
+  amostras_monte_carlo <- readRDS("cache_simulacao_ewma.RData")
+} else {
+  amostras_monte_carlo <- so_quero_que_funcione(amostras_monte_carlo_gerador)
+  saveRDS(amostras_monte_carlo, file = "cache_simulacao_ewma.RData")
+}
+```
+
+### Resumo
+
+```{r}
+amostras_monte_carlo_resumo <- amostras_monte_carlo %>%
+  group_by(lambda, novo_phi) %>%
+  summarise(
+    mean = mean(fracao_fora_de_controle),
+    min = min(fracao_fora_de_controle),
+    max = max(fracao_fora_de_controle),
+    .groups = "drop"
+  )
+
+amostras_monte_carlo_resumo
+```
+
+### Gráficos
+
+```{r}
+ggplotly(
+  amostras_monte_carlo_resumo %>%
+      ggplot(aes(x = novo_phi, y = mean, color = factor(lambda))) +
+      geom_line() +
+      geom_point() +
+      labs(
+        x = "Valores de Φ",
+        y = "Fração de pontos fora de controle",
+        color = "Valores de λ",
+        title = "Fração de pontos fora de controle por Φ e λ"
+      ) +
+      theme.base
+) %>%
+  plotly.base
+```
+
+### Box plot
+
+```{r}
+ggplotly(
+  amostras_monte_carlo %>%
+    ggplot(aes(x = factor(novo_phi), y = fracao_fora_de_controle, fill = factor(lambda))) +
+    geom_boxplot() +
+    labs(
+      x = "Valores de Φ",
+      y = "Fração de pontos fora de controle",
+      fill = "Valores de λ",
+        title = "Fração de pontos fora de controle por Φ e λ"
+    ) +
+    theme.base +
+    facet_wrap(~factor(lambda))
+) %>%
+  plotly.base
+
+```
+
+

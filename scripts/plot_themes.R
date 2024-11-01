@@ -1,4 +1,5 @@
 library(ggplot2)
+library(plotly)
 
 theme.base <- theme_minimal(base_size = 11) +
   theme(
@@ -42,3 +43,11 @@ theme.ts <- theme.base +
     panel.grid.minor.x = element_blank()
   ) +
   theme.no_legend
+
+plotly.base <- function(p) {
+  p %>%
+    layout(
+      margin = list(b = 60)
+    ) %>%
+    config(mathjax = 'cdn')
+}

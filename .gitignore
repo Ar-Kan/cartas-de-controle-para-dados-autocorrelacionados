@@ -2,3 +2,6 @@
 !.gitignore
 *.pdf
 .Rproj.user
+lib
+*.RData
+*.nb.html
