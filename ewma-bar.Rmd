@@ -58,6 +58,38 @@ coeficientes <- function(phi) {
   list(alpha = 0, beta = NULL, phi = phi, theta = NULL, d = 0, nu = 20)
 }
 
+barma.sim <- function(n, phi, seed, y.start = NULL){
+  BARFIMA.sim(
+    n = n,
+    coefs = coeficientes(phi),
+    y.start = y.start,
+    error.scale = 1,
+    complete = F,
+    seed = seed
+  )
+}
+
+barma.phi_estimado <- function(yt, alpha = 0, nu = 20, phi = 0.1){
+  BARFIMA.fit(
+    yt = yt,
+    start = list(alpha = alpha, nu = nu, phi = phi),
+    p = 1,
+    d = FALSE,
+    error.scale = 1,
+    report = F
+  )$coefficients["phi"][[1]]
+}
+
+barma.residuos <- function(yt, phi_estimado){
+  BARFIMA.extract(
+    yt = yt,
+    coefs = coeficientes(phi_estimado),
+    llk = F,
+    info = F,
+    error.scale = 1
+  )$error
+}
+
 ```
 
 ```{r, class.source = 'fold-show'}
@@ -115,19 +147,15 @@ ewma_qcc <- function(amostra_inicial, lambda, amostra_subsequente) {
 gera_amostras_subsequentes <- function() {
   lambda <- 0.2
   
-  coefs <- coeficientes(phi_parametro)
-  amostra_controle <- BARFIMA.sim(
+  amostra_controle <- barma.sim(
     n = nH0,
-    coefs = coefs,
-    error.scale = 1,
-    complete = F,
+    phi = phi_parametro,
     seed = 1337
   )
   
   ultima_observacao <- amostra_controle[nH0]
-  fit <- BARFIMA.fit(yt = amostra_controle, start = list(alpha = 0, nu = 20, phi = 0.1), p = 1, report = F)
-  phi_estimado <- fit$coefficients["phi"][[1]]
-  residuos_controle <- BARFIMA.extract(yt = amostra_controle, coefs = coeficientes(phi_estimado))$error
+  phi_estimado <- barma.phi_estimado(amostra_controle)
+  residuos_controle <- barma.residuos(amostra_controle, phi_estimado)
   
   data.frame(
       novo_phi = seq(0, 0.8, by = 0.1)
@@ -135,16 +163,14 @@ gera_amostras_subsequentes <- function() {
     rowwise() %>%
     mutate(
       observacao = list(1:nH1),
-      dados = list(BARFIMA.sim(
+      dados = list(barma.sim(
         n = nH1,
-        coefs = coeficientes(novo_phi),
-        y.start = ultima_observacao,
-        error.scale = 1,
-        complete = F,
-        seed = 1337
+        phi = novo_phi,
+        seed = 1337,
+        y.start = ultima_observacao
       )),
       residuos = list(
-        BARFIMA.extract(yt = dados, coefs = coefs)$error
+        barma.residuos(dados, phi_estimado)
       ),
       qcc = list(ewma_qcc(residuos_controle, lambda, residuos)),
       ewma = list(qcc$ewma),
@@ -174,7 +200,7 @@ amostras_subsequentes %>%
 
 ```{r message=FALSE, warning=FALSE}
 ggplotly(
-amostras_subsequentes %>%
+  amostras_subsequentes %>%
     unnest(
       cols = c(novo_phi, observacao, ewma, LI, LS)
     ) %>%
@@ -183,14 +209,14 @@ amostras_subsequentes %>%
     geom_line(aes(x = observacao, y = LS, color = "Limite Superior"), linetype = "dashed") +
     geom_line(aes(x = observacao, y = ewma, color = "EWMA")) +
     geom_point(data = . %>% filter(ewma < LI | ewma > LS),
-               aes(x = observacao, y = ewma, color = "Fora de controle"), size = 2) +
+               aes(x = observacao, y = ewma, color = "Fora de controle"), size = 1.5, shape = 4) +
     labs(x = "Observação", y = "Caracterísitca", color = "Legenda") +
     scale_color_manual(
       values = c(
-        "Limite Inferior" = adjustcolor("red", alpha.f = 0.4),
-        "Limite Superior" = adjustcolor("red", alpha.f = 0.4),
-        "EWMA" = "black",
-        "Fora de controle" = "red"
+        "Limite Inferior" = adjustcolor("red", alpha.f = 0.5),
+        "Limite Superior" = adjustcolor("red", alpha.f = 0.5),
+        "EWMA" = adjustcolor("black", alpha.f = 0.8),
+        "Fora de controle" = adjustcolor("red", alpha.f = 0.4)
       )
     ) +
     labs(
@@ -213,7 +239,7 @@ amostras_subsequentes %>%
 
 ```{r monte-carlo, class.source = 'fold-show'}
 amostras_monte_carlo_gerador <- function(){
-  numero_de_execucoes <- 100
+  numero_de_execucoes <- 200
   
   expand.grid(
     k = 1:numero_de_execucoes,
@@ -225,41 +251,24 @@ amostras_monte_carlo_gerador <- function(){
   ) %>%
   rowwise() %>%
   mutate(
-    amostra_controle = list(BARFIMA.sim(
+    amostra_controle = list(barma.sim(
       n = nH0,
-      coefs = coeficientes(phi_parametro),
-      error.scale = 1,
-      complete = F,
+      phi = phi_parametro,
       seed = id
     )),
     ultima_observacao = amostra_controle[nH0],
-    phi_estimado = BARFIMA.fit(
-      yt = amostra_controle,
-      start = list(alpha = 0, nu = 20, phi = 0.1),
-      p = 1,
-      report = F
-    )$coefficients["phi"][[1]],
+    phi_estimado = barma.phi_estimado(amostra_controle),
     residuos_controle = list(
-      BARFIMA.extract(
-        yt = amostra_controle,
-        coefs = coeficientes(phi_estimado)
-      )$error
+      barma.residuos(amostra_controle, phi_estimado)
     ),
-    dados = list(BARFIMA.sim(
+    dados = list(barma.sim(
       n = nH1,
-      coefs = coeficientes(novo_phi),
+      phi = novo_phi,
       y.start = ultima_observacao,
-      error.scale = 1,
-      complete = F,
       seed = id + 1337E4
     )),
     residuos = list(
-      BARFIMA.extract(
-        yt = dados,
-        coefs = coeficientes(phi_estimado),
-        llk = F,
-        info = F
-      )$error
+      barma.residuos(dados, phi_estimado)
     ),
     qcc = list(ewma_qcc(residuos_controle, lambda, residuos)),
     ewma = list(qcc$ewma),
@@ -315,7 +324,7 @@ ggplotly(
 
 ### Box plot
 
-```{r}
+```{r warning=FALSE}
 ggplotly(
   amostras_monte_carlo %>%
     ggplot(aes(x = factor(novo_phi), y = fracao_fora_de_controle, fill = factor(lambda))) +
@@ -326,10 +335,10 @@ ggplotly(
       fill = "Valores de λ",
         title = "Fração de pontos fora de controle por Φ e λ"
     ) +
-    theme.base +
-    facet_wrap(~factor(lambda))
-) %>%
-  plotly.base
+    theme.base
+  ) %>%
+  plotly.base %>%
+  layout(boxmode = 'group')
 
 ```
 
