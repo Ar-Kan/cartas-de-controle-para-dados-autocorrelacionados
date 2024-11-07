@@ -387,8 +387,8 @@ cumsum_qcc <- function(amostra_inicial_, se.shift, amostra_subsequente_ = NULL) 
   } else {
     seq(nH0 + 1, nH0 + nH1)
   }
-  pos = cu[["pos"]][registros]
-  neg = cu[["neg"]][registros]
+  pos <- cu[["pos"]][registros]
+  neg <- cu[["neg"]][registros]
   list(
     pos = pos,
     neg = neg,
@@ -527,20 +527,20 @@ cumsum_amostras_subsequentes %>%
 ### Cartas
 
 ```{r message=FALSE, warning=FALSE}
-ggplotly(
-  cumsum_amostras_subsequentes %>%
+cusum_1 <- function(){
+  plot <- cumsum_amostras_subsequentes %>%
     filter(novo_phi <= 0.5) %>%
     unnest(
-      cols = c(novo_phi, observacao, pos, neg, residuos)
+      cols = c(novo_phi, observacao, pos, neg, residuos, fora_de_controle_pos, fora_de_controle_neg)
     ) %>%
     ggplot() +
     geom_hline(aes(yintercept = 5, color = "Limite de decisão"), linetype = "dashed") +
     geom_hline(aes(yintercept = -5, color = "Limite de decisão"), linetype = "dashed") +
     geom_line(aes(x = observacao, y = pos, color = "N+")) +
     geom_line(aes(x = observacao, y = neg, color = "N-")) +
-    geom_point(data = . %>% filter(pos > 5),
+    geom_point(data = . %>% filter(fora_de_controle_pos),
                aes(x = observacao, y = pos, color = "Fora de controle"), size = 1.5, shape = 4) +
-    geom_point(data = . %>% filter(neg < -5),
+    geom_point(data = . %>% filter(fora_de_controle_neg),
                aes(x = observacao, y = neg, color = "Fora de controle"), size = 1.5, shape = 4) +
     labs(x = "Observação", y = "Caracterísitca", color = "Legenda") +
     scale_color_manual(
@@ -561,14 +561,11 @@ ggplotly(
       legend.title = element_blank()
     ) +
     facet_wrap(~novo_phi)
-) %>%
-  plotly.base
+  plot
+}
 
-```
-
-```{r}
-ggplotly(
-  cumsum_amostras_subsequentes %>%
+cusum_2 <- function(){
+  plot <- cumsum_amostras_subsequentes %>%
     filter(novo_phi > 0.5) %>%
     unnest(
       cols = c(novo_phi, observacao, pos, neg, residuos)
@@ -595,9 +592,19 @@ ggplotly(
       legend.title = element_blank()
     ) +
     facet_wrap(~novo_phi)
-) %>%
+  plot
+}
+
+ggp_1 <- ggplotly(cusum_1()) %>%
   plotly.base
+
+ggp_2 <- ggplotly(cusum_2()) %>%
+  plotly.base
+
+subplot(ggp_1, ggp_2, nrows = 2, margin = 0.05, heights = c(0.7, 0.3))
+
 ```
+
 
 
 ## Simulação de Monte Carlo
@@ -610,7 +617,7 @@ cumsum_monte_carlo_gerador <- function(){
   expand.grid(
     k = 1:numero_de_execucoes,
     novo_phi = seq(0.2, 0.6, by = 0.1),
-    se_shift = seq(0.4, 1.1, by = 0.1)
+    se_shift = seq(0.6, 1.1, by = 0.1)
   ) %>%
   mutate(
     id = row_number()
@@ -706,5 +713,91 @@ ggplotly(
   plotly.base %>%
   layout(boxmode = 'group')
 
+```
+
+
+# EWMA x CUSUM
+
+```{r}
+estatisticas_resumo_combinadas <- bind_rows(
+  cumsum_monte_carlo_resumo %>%
+    filter(se_shift > 0.7) %>%
+    mutate(algoritmo = "CUSUM"),
+  ewma_monte_carlo_resumo %>%
+    mutate(algoritmo = "EWMA")
+)
+```
+
+
+```{r}
+ggplotly(
+  estatisticas_resumo_combinadas %>%
+    ggplot() +
+    geom_line(
+      aes(x = novo_phi, y = mean, color = factor(lambda), linetype = algoritmo),
+      data = . %>% filter(algoritmo == "EWMA")
+    ) +
+    geom_point(
+      aes(x = novo_phi, y = mean, color = factor(lambda), shape = algoritmo),
+      data = . %>% filter(algoritmo == "EWMA")
+    ) +
+    geom_line(
+      aes(x = novo_phi, y = mean, color = factor(se_shift), linetype = algoritmo),
+      data = . %>% filter(algoritmo == "CUSUM")
+    ) +
+    geom_point(
+      aes(x = novo_phi, y = mean, color = factor(se_shift), shape = algoritmo),
+      data = . %>% filter(algoritmo == "CUSUM")
+    ) +
+    labs(
+      x = "Valores de Φ",
+      y = "Fração de pontos fora de controle",
+      linetype = "Algoritmo",
+      title = "Fração de pontos fora de controle",
+      color = "Valores dos parâmetros",
+      shape = "Algoritmo"
+    ) +
+    theme.base
+) %>%
+  plotly.base
+```
+
+
+```{r}
+estatisticas_combinadas <- bind_rows(
+  cumsum_monte_carlo %>%
+    filter(se_shift > 0.7) %>%
+    mutate(algoritmo = "CUSUM"),
+  ewma_monte_carlo %>%
+    mutate(algoritmo = "EWMA")
+)
+```
+
+
+```{r, warning=FALSE}
+ggplotly(
+  estatisticas_combinadas %>%
+    ggplot() +
+    geom_boxplot(
+      aes(x = factor(novo_phi), y = fracao_fora_de_controle, fill = factor(lambda), shape = algoritmo),
+      data = . %>% filter(algoritmo == "EWMA")
+    ) +
+    geom_boxplot(
+      aes(x = factor(novo_phi), y = fracao_fora_de_controle, fill = factor(se_shift), shape = algoritmo),
+      data = . %>% filter(algoritmo == "CUSUM")
+    ) +
+    labs(
+      x = "Valores de Φ",
+      y = "Fração de pontos fora de controle",
+      fill = "Valores dos parâmetros",
+      linetype = "Algoritmo",
+      title = "Fração de pontos fora de controle",
+      color = "Valores dos parâmetros"
+    ) +
+    facet_wrap(~algoritmo) +
+    theme.base
+) %>%
+  plotly.base %>%
+  layout(boxmode = 'group')
 ```
 
