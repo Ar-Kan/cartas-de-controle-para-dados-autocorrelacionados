@@ -154,10 +154,20 @@ ewma_qcc <- function(amostra_inicial, lambda, amostra_subsequente) {
   ew <- ewma(amostra_inicial, lambda = lambda, nsigmas = 3, plot = F, newdata = amostra_subsequente)
   
   registros <- (nH0 + 1):(nH0 + nH1)
+  
+  ewma <- as.numeric(ew$y[registros])
+  LI <- ew$limits[, 1][registros]
+  LS <- ew$limits[, 2][registros]
+  fora_de_controle <- ewma < LI | ewma > LS
+  total_fora_de_controle <- sum(fora_de_controle, na.rm = TRUE)
+  fracao_fora_de_controle <- total_fora_de_controle / length(ewma)
   list(
-    ewma = as.numeric(ew$y[registros]),
-    LI = ew$limits[, 1][registros],
-    LS = ew$limits[, 2][registros]
+    ewma = ewma,
+    LI = LI,
+    LS = LS,
+    fora_de_controle = fora_de_controle,
+    total_fora_de_controle = total_fora_de_controle,
+    fracao_fora_de_controle = fracao_fora_de_controle
   )
 }
 ```
@@ -198,9 +208,9 @@ ewma_amostras_subsequentes_gerador <- function() {
       ewma = list(qcc$ewma),
       LI = list(qcc$LI),
       LS = list(qcc$LS),
-      fora_de_controle = list(ewma < LI | ewma > LS),
-      total_fora_de_controle = sum(fora_de_controle),
-      fracao_fora_de_controle = total_fora_de_controle / nH1
+      fora_de_controle = list(qcc$fora_de_controle),
+      total_fora_de_controle = qcc$total_fora_de_controle,
+      fracao_fora_de_controle = qcc$fracao_fora_de_controle
     )
 }
 
@@ -296,9 +306,9 @@ ewma_monte_carlo_gerador <- function(){
     ewma = list(qcc$ewma),
     LI = list(qcc$LI),
     LS = list(qcc$LS),
-    fora_de_controle = list(ewma < LI | ewma > LS),
-    total_fora_de_controle = sum(fora_de_controle, na.rm = TRUE),
-    fracao_fora_de_controle = total_fora_de_controle / nH1
+    fora_de_controle = list(qcc$fora_de_controle),
+    total_fora_de_controle = qcc$total_fora_de_controle,
+    fracao_fora_de_controle = qcc$fracao_fora_de_controle
   )
 }
 
@@ -389,10 +399,17 @@ cumsum_qcc <- function(amostra_inicial_, se.shift, amostra_subsequente_ = NULL) 
   }
   pos <- cu[["pos"]][registros]
   neg <- cu[["neg"]][registros]
+  fora_de_controle_pos <- pos > intervalo_de_decisao
+  fora_de_controle_neg <- neg < -intervalo_de_decisao
+  total_fora_de_controle <- sum(fora_de_controle_pos) + sum(fora_de_controle_neg)
+  fracao_fora_de_controle <- total_fora_de_controle / length(registros)
   list(
     pos = pos,
     neg = neg,
-    fora_de_controle = length(pos[pos > intervalo_de_decisao]) + length(neg[neg < -intervalo_de_decisao])
+    fora_de_controle_pos = fora_de_controle_pos,
+    fora_de_controle_neg = fora_de_controle_neg,
+    total_fora_de_controle = total_fora_de_controle,
+    fracao_fora_de_controle = fracao_fora_de_controle
   )
 }
 ```
@@ -406,7 +423,7 @@ Queremos que nas 100 amostras iniciais a probabilidade de um ponto fora de contr
 ```{r, class.source = 'fold-show'}
 se_shift_otimo_optimize <- function(amostra_inicial) {
   for (x in seq(0, 3, by = 0.1)) {
-    if (cumsum_qcc(amostra_inicial, se.shift = x)$fora_de_controle == 0) {
+    if (cumsum_qcc(amostra_inicial, se.shift = x)$total_fora_de_controle == 0) {
       return(x)
     }
   }
@@ -505,10 +522,10 @@ cumsum_amostras_subsequentes_gerador <- function() {
       qcc = list(cumsum_qcc(residuos_controle, valor_otimo_se_shift, residuos)),
       pos = list(qcc$pos),
       neg = list(qcc$neg),
-      fora_de_controle_pos = list(pos > 5),
-      fora_de_controle_neg = list(neg < -5),
-      total_fora_de_controle = sum(fora_de_controle_pos) + sum(fora_de_controle_neg),
-      fracao_fora_de_controle = total_fora_de_controle / nH1
+      fora_de_controle_pos = list(qcc$fora_de_controle_pos),
+      fora_de_controle_neg = list(qcc$fora_de_controle_neg),
+      total_fora_de_controle = qcc$total_fora_de_controle,
+      fracao_fora_de_controle = qcc$fracao_fora_de_controle
     )
 }
 
@@ -612,12 +629,12 @@ subplot(ggp_1, ggp_2, nrows = 2, margin = 0.05, heights = c(0.7, 0.3))
 
 ```{r cumsum-monte-carlo, class.source = 'fold-show'}
 cumsum_monte_carlo_gerador <- function(){
-  numero_de_execucoes <- 200
+  numero_de_execucoes <- 100
   
   expand.grid(
     k = 1:numero_de_execucoes,
     novo_phi = seq(0.2, 0.6, by = 0.1),
-    se_shift = seq(0.6, 1.1, by = 0.1)
+    se_shift = seq(0.1, 1.0, by = 0.1)
   ) %>%
   mutate(
     id = row_number()
@@ -646,10 +663,10 @@ cumsum_monte_carlo_gerador <- function(){
     qcc = list(cumsum_qcc(residuos_controle, se_shift, residuos)),
     pos = list(qcc$pos),
     neg = list(qcc$neg),
-    fora_de_controle_pos = list(pos > 5),
-    fora_de_controle_neg = list(neg < -5),
-    total_fora_de_controle = sum(fora_de_controle_pos) + sum(fora_de_controle_neg),
-    fracao_fora_de_controle = total_fora_de_controle / nH1
+    fora_de_controle_pos = list(qcc$fora_de_controle_pos),
+    fora_de_controle_neg = list(qcc$fora_de_controle_neg),
+    total_fora_de_controle = qcc$total_fora_de_controle,
+    fracao_fora_de_controle = qcc$fracao_fora_de_controle
   )
 }
 
@@ -660,6 +677,8 @@ cumsum_monte_carlo <- cache_dados(
 ```
 
 ### Resumo
+
+Em média, diminuir o `se.shift` aumenta a sensibilidade do CUSUM para detectar mudanças no processo.
 
 ```{r}
 cumsum_monte_carlo_resumo <- cumsum_monte_carlo %>%
@@ -799,5 +818,123 @@ ggplotly(
 ) %>%
   plotly.base %>%
   layout(boxmode = 'group')
+```
+
+
+## E se... combinarmos os dois algoritmos?
+
+
+
+```{r}
+comb_monte_carlo_gerador <- function(numero_de_execucoes) {
+  numero_de_execucoes <- 100
+  
+  expand.grid(
+    k = 1:numero_de_execucoes,
+    novo_phi = seq(0.2, 0.4, by = 0.1),
+    se_shift = seq(0.7, 1.1, by = 0.1),
+    lambda = seq(0.1, 0.4, by = 0.1)
+  ) %>%
+  mutate(
+    id = row_number(),
+    "(se;λ)" = factor(paste0(se_shift, ";", lambda))
+  ) %>%
+  rowwise() %>%
+  mutate(
+    amostra_controle = list(barma.sim(n = nH0, phi = phi_parametro, seed = id)),
+    ultima_observacao = amostra_controle[nH0],
+    phi_estimado = barma.phi_estimado(amostra_controle),
+    residuos_controle = list(barma.residuos(amostra_controle, phi_estimado)),
+    dados = list(barma.sim(n = nH1, phi = novo_phi, y.start = ultima_observacao, seed = id + 1337E4)),
+    residuos = list(barma.residuos(dados, phi_estimado)),
+    ewma = list(ewma_qcc(residuos_controle, lambda, residuos)),
+    cumsum = list(cumsum_qcc(residuos_controle, se_shift, residuos)),
+    fora_de_controle = list(
+      ewma$fora_de_controle & (cumsum$fora_de_controle_pos | cumsum$fora_de_controle_neg)
+    ),
+    fracao_fora_de_controle = sum(fora_de_controle) / nH1
+  )
+}
+
+comb_monte_carlo <- cache_dados(
+  "cache_simulacao_comb.RData",
+  \() so_quero_que_funcione(comb_monte_carlo_gerador)
+)
+```
+
+### Resultados
+
+```{r}
+comb_monte_carlo_resumo <- comb_monte_carlo %>%
+  group_by(`(se;λ)`, novo_phi, se_shift, lambda) %>%
+  summarise(
+    mean = mean(fracao_fora_de_controle),
+    min = min(fracao_fora_de_controle),
+    max = max(fracao_fora_de_controle),
+    .groups = "drop"
+  )
+
+comb_monte_carlo_resumo
+```
+
+```{r}
+ggplotly(
+  comb_monte_carlo_resumo %>%
+    ggplot(aes(x = novo_phi, y = mean, color = `(se;λ)`)) +
+    geom_line() +
+    geom_point() +
+    labs(
+      x = "Valores de Φ",
+      y = "Fração de pontos fora de controle",
+      color = "Valores dos parâmetros (se;λ)",
+      title = "Fração de pontos fora de controle por Φ"
+    ) +
+    theme.base
+) %>%
+  plotly.base
+```
+
+
+### A melhor combinação encontrada
+
+
+```{r}
+melhores <- c("1;0.3")
+
+ggplotly(
+  comb_monte_carlo_resumo %>%
+    filter(`(se;λ)` %in% melhores) %>%
+    ggplot(aes(x = novo_phi, y = mean, color = `(se;λ)`)) +
+    geom_line() +
+    geom_point() +
+    labs(
+      x = "Valores de Φλ",
+      y = "Fração de pontos fora de controle",
+      color = "Valores dos parâmetros (se;λ)",
+      title = "Fração de pontos fora de controle por Φ"
+    ) +
+    theme.base
+) %>%
+  plotly.base
+```
+
+
+```{r warning=FALSE}
+ggplotly(
+  comb_monte_carlo %>%
+    filter(`(se;λ)` %in% melhores) %>%
+    ggplot(aes(x = factor(novo_phi), y = fracao_fora_de_controle, fill = `(se;λ)`)) +
+    geom_boxplot() +
+    labs(
+      x = "Valores de Φ",
+      y = "Fração de pontos fora de controle",
+      fill = "Valores de `(se;λ)`",
+        title = "Fração de pontos fora de controle por Φ e se.shift"
+    ) +
+    theme.base
+  ) %>%
+  plotly.base %>%
+  layout(boxmode = 'group')
+
 ```
 
