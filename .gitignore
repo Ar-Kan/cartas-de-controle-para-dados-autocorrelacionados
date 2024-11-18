@@ -5,3 +5,4 @@
 lib
 *.RData
 *.nb.html
+*.rds
