@@ -20,6 +20,13 @@ knit: (function(input, encoding) {
   })
 ---
 
+<style>
+.dataTable caption {
+  color: #666;
+  font-weight: bold;
+}
+</style>
+
 ```{r include-html, message=FALSE, include=FALSE}
 Sys.setenv(lang = "en_US")
 Sys.setlocale("LC_ALL", "en_US.UTF-8")
@@ -195,6 +202,7 @@ barma.residuos <- function(yt, phi_estimado){
 
 ```
 
+
 ```{r, class.source = 'fold-show'}
 # Função para forçar a execução de `BARFIMA.extract` até que ela funcione
 so_quero_que_funcione <- function(func, debug = F, max = 5, ...) {
@@ -249,20 +257,25 @@ so_quero_que_funcione <- function(func, debug = F, max = 5, ...) {
 # Total de execuções é:
 # `execucoes = numero_de_execucoes * length(novos_phis) * nrow(parametros)`
 # 
-gerador_monte_carlo <- function(parametros, numero_de_execucoes = 200){
+gerador_monte_carlo <- function(parametros = NULL, numero_de_execucoes = 200){
   # Verifica se `parametros` é um data frame, caso contrário converte para um data frame
-  if (!is.data.frame(parametros)) {
+  if (!is.null(parametros) && !is.data.frame(parametros)) {
     parametros <- as.data.frame(parametros)
   }
   
   novos_phis <- seq(0.2, 0.6, by = 0.1)
   
   # Expande a grade de parâmetros para cobrir todas as combinações
-  expand.grid(
+  result <- expand.grid(
     k = 1:numero_de_execucoes,
     h1_phi = novos_phis
-  ) %>%
-    merge(parametros, all = TRUE) %>%
+  )
+  
+  if (!is.null(parametros)) {
+    result <- merge(result, parametros, all = TRUE)
+  }
+  
+  result %>%
     mutate(id = row_number()) %>%
     rowwise() %>%
     mutate(
@@ -294,6 +307,47 @@ gerador_monte_carlo <- function(parametros, numero_de_execucoes = 200){
 }
 ```
 
+
+### Validação
+
+Vamos verificar nossa implementação do gerador de Monte-Carlo.
+
+```{r}
+teste_montecarlo <- gerador_monte_carlo(
+  numero_de_execucoes = 100
+) %>%
+  select(h0_phi, h1_phi) %>%
+  mutate(
+    # Calcula a diferença entre os valores de phi
+    # `phi_parametro`: valor de phi definido para a amostra de controle
+    # `h0_phi`: valor de phi estimado para a amostra de controle. Espera-se que seja igual a `phi_parametro`
+    diferenca = abs(h0_phi - phi_parametro)
+  )
+```
+
+
+```{r}
+ggplotly(
+  teste_montecarlo %>%
+    ggplot(aes(x = factor(1), y = diferenca)) +
+    geom_boxplot() +
+    geom_hline(yintercept = phi_parametro, color = "red", linetype = "dashed") +
+    annotate(
+      geom = "text",
+      x = 0.75,
+      y = phi_parametro + 0.01,
+      label = sprintf("Φ = %.1f", phi_parametro),
+      color = "red"
+    ) +
+    labs(
+      x = "Valores de Φ₀",
+      y = "Diferença absoluta entre Φ e Φ₀",
+      title = paste0("Diferença absoluta entre Φ e Φ₀, para ", nrow(teste_montecarlo), " execuções")
+    ) +
+    theme.base
+) %>%
+  plotly.base
+```
 
 
 # EWMA
@@ -489,16 +543,17 @@ O CUSUM (Cumulative Sum) é um método de controle de processos que utiliza a so
 Neste método são definidas duas constantes, $H$ e $K$, que representam o tamanho da mudança que se deseja detectar e a sensibilidade do método, respectivamente. As estatísticas de controle, sendo duas, são definidas como:
 
 $$
-\text{C}^+_i = \max\left[0, x_i - (\mu_0 + K) + C^+_{i-1}\right]\\
-
-\text{C}^-_i = \max\left[0, (\mu_0 - K) - x_i + C^-_{i-1}\right]
+\begin{matrix}
+\text{C}^+_i & = & \max\left[0, x_i - (\mu_0 + K) + C^+_{i-1}\right] \\
+\text{C}^-_i & = & \max\left[0, (\mu_0 - K) - x_i + C^-_{i-1}\right] \\
+\end{matrix}
 $$
 
 onde $x_i$ é a observação no instante $i$, $\mu_0$ é a média do processo, $C^+_0 = C^-_0 = 0$ e $i = 1, 2, \ldots, n$.
 
 A constante $K$, chamada de _valor de referência_, geralmente, segundo Montgomery (2009), é definida como a metade entre o $\mu_0$ alvo e o valor fora de controle de média $\mu_1$ que queremos detectar.
 
-Já a constante $H$, chamada de _limite de decisão_, é definida como o valor que a estatística de controle deve atingir para que possamos detectar a mudança no processo. Para Montgomery (2009), um valor razoável para $H$ é $5\sigma$. Assim, se $C^+$ ou $C^-$ atingir $H$, então o processo está fora de controle.
+Já a constante $H$, chamada de _limite de decisão_, é definida como o valor que a estatística de controle deve atingir para que possamos detectar a mudança no processo. Para Montgomery (2009), um valor razoável para $H$ é $5\sigma$. Assim, se $\text{C}^+_i >= H$ ou $\text{C}^-_i <= -H$, então o processo está fora de controle.
 
 
 ```{r, class.source = 'fold-show'}
@@ -615,7 +670,7 @@ kableExtra::kbl(
 ```
 
 
-## Monte-Carlo
+### Monte-Carlo
 
 
 ```{r}
@@ -642,7 +697,7 @@ cumsum_monte_carlo <- cache_dados(
 ```
 
 
-## Cartas para `K` ótimo
+### Cartas para `K` ótimo
 
 Vamos analisar o CUSUM para o valor ótimo de `K` encontrado.
 
@@ -692,7 +747,7 @@ ggplotly(
 ```
 
 
-## Resumo
+### Resumo
 
 Em média, diminuir o `K` aumenta a sensibilidade do CUSUM para detectar mudanças no processo.
 
@@ -715,7 +770,7 @@ datatable(
 ```
 
 
-## Gráficos
+### Gráficos
 
 Análise gráfica das médias de FPFCs.
 
