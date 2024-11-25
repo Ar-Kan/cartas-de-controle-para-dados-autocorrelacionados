@@ -6,3 +6,4 @@ lib
 *.RData
 *.nb.html
 *.rds
+!.gitkeep
