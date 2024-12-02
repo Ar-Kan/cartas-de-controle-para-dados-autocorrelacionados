@@ -68,7 +68,10 @@ theme.base <- theme_minimal(base_size = 11) +
     axis.title = element_text(size = 8),
     legend.title = element_text(size = 8),
     panel.grid.major = element_line(colour = "grey90", linewidth = 0.5),
-    panel.grid.minor = element_line(colour = adjustcolor("grey90", alpha.f = 0.4), linewidth = 0.5),
+    panel.grid.minor = element_line(
+      colour = adjustcolor("grey90", alpha.f = 0.4),
+      linewidth = 0.5
+    ),
     panel.border = element_blank(),
     panel.background = element_blank(),
     plot.background = element_blank(),
@@ -78,20 +81,12 @@ theme.base <- theme_minimal(base_size = 11) +
 
 theme.no_legend <- theme(legend.position = "none")
 
-theme.no_grid <-  theme(
-  panel.grid.major = element_blank(),
-  panel.grid.minor = element_blank()
-)
+theme.no_grid <-  theme(panel.grid.major = element_blank(),
+                        panel.grid.minor = element_blank())
 
-theme.no_axis <- theme(
-  axis.line.x = element_blank(),
-  axis.line.y = element_blank()
-)
+theme.no_axis <- theme(axis.line.x = element_blank(), axis.line.y = element_blank())
 
-theme.no_axis_title <- theme(
-  axis.title.x = element_blank(),
-  axis.title.y = element_blank()
-)
+theme.no_axis_title <- theme(axis.title.x = element_blank(), axis.title.y = element_blank())
 
 # Theme for timeseries
 theme.ts <- theme.base +
@@ -104,9 +99,7 @@ theme.ts <- theme.base +
 
 plotly.base <- function(p) {
   p %>%
-    layout(
-      margin = list(b = 60, t = 80)
-    ) %>%
+    layout(margin = list(b = 60, t = 80)) %>%
     config(mathjax = 'cdn')
 }
 ```
@@ -174,14 +167,23 @@ coeficientes <- function(phi) {
   # βARMA: o modelo de Rocha e Cribari-Neto (2009, 2017)
   #        é obtido definindo `coefs$d = 0`
   #        e `d = FALSE` e `error.scale = 1` (escala preditiva)
-  # 
+  #
   # ν (nu): parâmetro de precisão, quanto maior o seu valor,
   #         menor a variância condicional (para μ_t fixo).
   #         O pacote BTSR define como padrão ν = 20.
-  list(alpha = 0, nu = 20, phi = phi, d = 0, nu = 20)
+  list(
+    alpha = 0,
+    nu = 20,
+    phi = phi,
+    d = 0,
+    nu = 20
+  )
 }
 
-barma.sim <- function(n, phi, seed = NULL, y.start = NULL){
+barma.sim <- function(n,
+                      phi,
+                      seed = NULL,
+                      y.start = NULL) {
   BARFIMA.sim(
     n = n,
     coefs = coeficientes(phi),
@@ -192,18 +194,22 @@ barma.sim <- function(n, phi, seed = NULL, y.start = NULL){
   )
 }
 
-barma.phi_estimado <- function(yt, alpha = 0, nu = 20, phi = 0.1){
+barma.phi_estimado <- function(yt,
+                               alpha = 0,
+                               nu = 20,
+                               phi = 0.1) {
   BARFIMA.fit(
     yt = yt,
     start = list(alpha = alpha, nu = nu, phi = phi),
-    p = 1, # Odem do polinômio AR
+    p = 1,
+    # Odem do polinômio AR
     d = FALSE,
     error.scale = 1,
     report = F
   )$coefficients["phi"][[1]]
 }
 
-barma.residuos <- function(yt, phi_estimado){
+barma.residuos <- function(yt, phi_estimado) {
   BARFIMA.extract(
     yt = yt,
     coefs = coeficientes(phi_estimado),
@@ -218,13 +224,17 @@ barma.residuos <- function(yt, phi_estimado){
 
 ```{r}
 # Função para forçar a execução de `BARFIMA.extract` até que ela funcione
-so_quero_que_funcione <- function(func, debug = F, max = 5, ...) {
+so_quero_que_funcione <- function(func,
+                                  debug = F,
+                                  max = 5,
+                                  ...) {
   FINALMENTE <- F
   contador <- 0
   
   while (!FINALMENTE) {
     contador <- contador + 1
-    if (debug) print(paste("Tentativa:", contador))
+    if (debug)
+      print(paste("Tentativa:", contador))
     
     resultado <- tryCatch({
       func(...)
@@ -263,10 +273,10 @@ so_quero_que_funcione <- function(func, debug = F, max = 5, ...) {
 #   ),
 #   numero_de_execucoes = 2
 # )
-# 
+#
 # teste1
 # ```
-# 
+#
 # Exemplo 2:
 # ```r
 # teste2 <- gerador_monte_carlo(
@@ -276,14 +286,15 @@ so_quero_que_funcione <- function(func, debug = F, max = 5, ...) {
 #   )
 #   numero_de_execucoes = 2
 # )
-# 
+#
 # teste2
 # ```
-# 
+#
 # Total de execuções é:
 # `execucoes = numero_de_execucoes * length(novos_phis) * nrow(parametros)`
-# 
-gerador_monte_carlo <- function(parametros = NULL, numero_de_execucoes = 200){
+#
+gerador_monte_carlo <- function(parametros = NULL,
+                                numero_de_execucoes = 200) {
   # Verifica se `parametros` é um data frame, caso contrário converte para um data frame
   if (!is.null(parametros) && !is.data.frame(parametros)) {
     parametros <- as.data.frame(parametros)
@@ -292,10 +303,7 @@ gerador_monte_carlo <- function(parametros = NULL, numero_de_execucoes = 200){
   novos_phis <- seq(0.2, 0.6, by = 0.1)
   
   # Expande a grade de parâmetros para cobrir todas as combinações
-  result <- expand.grid(
-    k = 1:numero_de_execucoes,
-    h1_phi = novos_phis
-  )
+  result <- expand.grid(k = 1:numero_de_execucoes, h1_phi = novos_phis)
   
   if (!is.null(parametros)) {
     result <- merge(result, parametros, all = TRUE)
@@ -308,9 +316,7 @@ gerador_monte_carlo <- function(parametros = NULL, numero_de_execucoes = 200){
       # H0
       ## Gera amostra de controle
       h0_amostras = list(barma.sim(
-        n = nH0,
-        phi = phi_parametro,
-        seed = id
+        n = nH0, phi = phi_parametro, seed = id
       )),
       ## Estima o valor de phi da amostra de controle
       h0_phi = barma.phi_estimado(h0_amostras),
@@ -318,17 +324,19 @@ gerador_monte_carlo <- function(parametros = NULL, numero_de_execucoes = 200){
       h0_residuos = list(barma.residuos(h0_amostras, h0_phi)),
       # H1
       ## Gera a amostra subsequente
-      h1_controle = list(barma.sim(
-        n = nH1,
-        phi = h1_phi,
-        # última observação da amostra de controle
-        y.start = h0_amostras[nH0],
-        seed = id + 1337E4
-      )),
+      h1_controle = list(
+        barma.sim(
+          n = nH1,
+          phi = h1_phi,
+          # última observação da amostra de controle
+          y.start = h0_amostras[nH0],
+          seed = id + 1337E4
+        )
+      ),
       ## Calcula os resíduos da amostra subsequente
-      h1_residuos = list(so_quero_que_funcione(
-        \() barma.residuos(h1_controle, h0_phi)
-      ))
+      h1_residuos = list(so_quero_que_funcione(\() barma.residuos(
+        h1_controle, h0_phi
+      )))
     )
 }
 ```
@@ -339,24 +347,17 @@ gerador_monte_carlo <- function(parametros = NULL, numero_de_execucoes = 200){
 Vamos verificar nossa implementação do gerador de Monte Carlo.
 
 ```{r}
-teste_montecarlo <- cache_dados(
-  "teste-montecarlo",
-  function() {
-    gerador_monte_carlo(
-      parametros = list(
-        nH0 = c(rep(25, 20), rep(50, 20), rep(100, 20), rep(200, 20))
-      ),
-      numero_de_execucoes = 1
-    ) %>%
-      select(nH0, h0_phi, h1_phi) %>%
-      mutate(
-        # Calcula a diferença entre os valores de phi
-        # `phi_parametro`: valor de phi definido para a amostra de controle
-        # `h0_phi`: valor de phi estimado para a amostra de controle. Espera-se que seja igual a `phi_parametro`
-        diferenca = h0_phi - phi_parametro
-      )
-  }
-)
+teste_montecarlo <- cache_dados("teste-montecarlo", function() {
+  gerador_monte_carlo(parametros = list(nH0 = c(
+    rep(25, 20), rep(50, 20), rep(100, 20), rep(200, 20)
+  )),
+  numero_de_execucoes = 1) %>%
+    select(nH0, h0_phi, h1_phi) %>%
+    mutate(# Calcula a diferença entre os valores de phi
+      # `phi_parametro`: valor de phi definido para a amostra de controle
+      # `h0_phi`: valor de phi estimado para a amostra de controle. Espera-se que seja igual a `phi_parametro`
+      diferenca = h0_phi - phi_parametro)
+})
 ```
 
 
@@ -379,7 +380,11 @@ ggplotly(
   teste_montecarlo %>%
     ggplot(aes(x = factor(nH0), y = diferenca)) +
     geom_boxplot() +
-    geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+    geom_hline(
+      yintercept = 0,
+      color = "red",
+      linetype = "dashed"
+    ) +
     annotate(
       geom = "text",
       x = 0.55,
@@ -419,7 +424,10 @@ $$
 Aqui, utilizamos o pacote `qcc` para implementar o EWMA.
 
 ```{r, class.source = 'fold-show'}
-ewma_qcc <- function(amostra_inicial, lambda, amostra_subsequente, nsigmas = 1.96) {
+ewma_qcc <- function(amostra_inicial,
+                     lambda,
+                     amostra_subsequente,
+                     nsigmas = 1.96) {
   ew <- ewma(
     amostra_inicial,
     lambda = lambda,
@@ -455,26 +463,19 @@ Vamos analisar buscar o melhor valor de $\lambda$ para o EWMA, mantendo um níve
 
 
 ```{r}
-ewma_monte_carlo <- cache_dados(
-  "simulacao-ewma",
-  function() {
-    gerador_monte_carlo(
-      parametros = list(
-        lambda = seq(0.1, 0.9, by = 0.1)
-      )
+ewma_monte_carlo <- cache_dados("simulacao-ewma", function() {
+  gerador_monte_carlo(parametros = list(lambda = seq(0.1, 0.9, by = 0.1))) %>%
+    mutate(
+      qcc = list(ewma_qcc(h0_residuos, lambda, h1_residuos)),
+      ewma = list(qcc$ewma),
+      LI = list(qcc$LI),
+      LS = list(qcc$LS),
+      fora_de_controle = list(qcc$fora_de_controle),
+      total_fora_de_controle = qcc$total_fora_de_controle,
+      fracao_fora_de_controle = qcc$fracao_fora_de_controle
     ) %>%
-      mutate(
-        qcc = list(ewma_qcc(h0_residuos, lambda, h1_residuos)),
-        ewma = list(qcc$ewma),
-        LI = list(qcc$LI),
-        LS = list(qcc$LS),
-        fora_de_controle = list(qcc$fora_de_controle),
-        total_fora_de_controle = qcc$total_fora_de_controle,
-        fracao_fora_de_controle = qcc$fracao_fora_de_controle
-      ) %>%
-      select(-qcc)
-  }
-)
+    select(-qcc)
+})
 
 ewma_monte_carlo$lambda <- as.factor(ewma_monte_carlo$lambda)
 ```
@@ -489,18 +490,26 @@ ggplotly(
     filter(k == 1 & lambda == 0.2) %>% # Apenas a primeira execução
     select(h1_phi, ewma, LI, LS, fora_de_controle, lambda) %>%
     rename(`Φ₁` = h1_phi) %>%
-    mutate(
-      observacao = list(1:nH1)
-    ) %>%
-    unnest(
-      cols = c(`Φ₁`, observacao, ewma, LI, LS, fora_de_controle)
-    ) %>%
+    mutate(observacao = list(1:nH1)) %>%
+    unnest(cols = c(
+      `Φ₁`, observacao, ewma, LI, LS, fora_de_controle
+    )) %>%
     ggplot() +
-    geom_line(aes(x = observacao, y = LI, color = "Limite Inferior"), linetype = "dashed") +
-    geom_line(aes(x = observacao, y = LS, color = "Limite Superior"), linetype = "dashed") +
-    geom_line(aes(x = observacao, y = ewma, color = "EWMA")) +
-    geom_point(data = . %>% filter(fora_de_controle),
-               aes(x = observacao, y = ewma, color = "Fora de controle"), size = 1, shape = 4) +
+    geom_line(aes(
+      x = observacao, y = LI, color = "Limite Inferior"
+    ), linetype = "dashed") +
+    geom_line(aes(
+      x = observacao, y = LS, color = "Limite Superior"
+    ), linetype = "dashed") +
+    geom_line(aes(
+      x = observacao, y = ewma, color = "EWMA"
+    )) +
+    geom_point(
+      data = . %>% filter(fora_de_controle),
+      aes(x = observacao, y = ewma, color = "Fora de controle"),
+      size = 1,
+      shape = 4
+    ) +
     labs(x = "Observação", y = "Caracterísitca", color = "Legenda") +
     scale_color_manual(
       values = c(
@@ -510,14 +519,9 @@ ggplotly(
         "Fora de controle" = adjustcolor("#f42f2f", alpha.f = 0.8)
       )
     ) +
-    labs(
-      title = "EWMA para resíduos βAR(1), com λ = 0.2",
-    ) +
+    labs(title = "EWMA para resíduos βAR(1), com λ = 0.2", ) +
     theme.base +
-    theme(
-      legend.position = "bottom",
-      legend.title = element_blank()
-    ) +
+    theme(legend.position = "bottom", legend.title = element_blank()) +
     facet_wrap(vars(`Φ₁`), ncol = 2, labeller = "label_both")
 ) %>%
   plotly.base
@@ -541,7 +545,7 @@ ewma_monte_carlo_resumo <- ewma_monte_carlo %>%
 
 datatable(
   ewma_monte_carlo_resumo %>%
-   mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
+    mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
   caption = "Pontos fora de controle por Φ₁ e λ",
   colnames = c("Valores de λ", "Valores de Φ₁", "Média", "Mínimo", "Máximo")
 )
@@ -554,16 +558,18 @@ Pela análise gráfica das médias de FPFCs (Fração de Pontos Fora de Controle
 ```{r}
 ggplotly(
   ewma_monte_carlo_resumo %>%
-      ggplot(aes(x = h1_phi, y = mean, color = lambda)) +
-      geom_line() +
-      geom_point() +
-      labs(
-        x = "Valores de Φ",
-        y = "Fração de pontos fora de controle",
-        color = "Valores de λ",
-        title = "FPFCs por Φ e λ"
-      ) +
-      theme.base
+    ggplot(aes(
+      x = h1_phi, y = mean, color = lambda
+    )) +
+    geom_line() +
+    geom_point() +
+    labs(
+      x = "Valores de Φ",
+      y = "Fração de pontos fora de controle",
+      color = "Valores de λ",
+      title = "FPFCs por Φ e λ"
+    ) +
+    theme.base
 ) %>%
   plotly.base
 ```
@@ -574,16 +580,20 @@ E, a distribuição dos PFCs.
 ```{r warning=FALSE}
 ggplotly(
   ewma_monte_carlo %>%
-    ggplot(aes(x = factor(h1_phi), y = fracao_fora_de_controle, fill = lambda)) +
+    ggplot(aes(
+      x = factor(h1_phi),
+      y = fracao_fora_de_controle,
+      fill = lambda
+    )) +
     geom_boxplot() +
     labs(
       x = "Valores de Φ",
       y = "Fração de pontos fora de controle",
       fill = "Valores de λ",
-        title = "FPFCs por Φ e λ"
+      title = "FPFCs por Φ e λ"
     ) +
     theme.base
-  ) %>%
+) %>%
   plotly.base %>%
   layout(boxmode = 'group')
 
@@ -591,157 +601,7 @@ ggplotly(
 
 
 
-## Monte Carlo geral
 
-
-Vamos ver se, alterando também o valor de $\alpha$, obtemos um melhor resultado.
-
-```{r}
-ewma_geral_monte_carlo <- cache_dados(
-  "simulacao-ewma-geral",
-  function() {
-    gerador_monte_carlo(
-      parametros = expand.grid(
-        lambda = seq(0.1, 0.9, by = 0.2),
-        alfa = seq(0.02, 0.1, by = 0.02)
-      )
-    ) %>%
-      mutate(
-        qcc = list(ewma_qcc(h0_residuos, lambda, h1_residuos, qnorm(1 - alfa))),
-        ewma = list(qcc$ewma),
-        LI = list(qcc$LI),
-        LS = list(qcc$LS),
-        fora_de_controle = list(qcc$fora_de_controle),
-        total_fora_de_controle = qcc$total_fora_de_controle,
-        fracao_fora_de_controle = qcc$fracao_fora_de_controle
-      ) %>%
-      select(-qcc)
-  }
-)
-```
-
-
-
-### Resumo
-
-Resumo da fração de pontos fora de controle para diferentes valores de $\lambda$ e $\Phi_1$.
-
-```{r}
-ewma_geral_monte_carlo$`(λ;α)` <- as.factor(paste(ewma_geral_monte_carlo$lambda, ewma_geral_monte_carlo$alfa, sep = ";"))
-
-ewma_geral_monte_carlo_resumo <- ewma_geral_monte_carlo %>%
-  group_by(`(λ;α)`, lambda, alfa, h1_phi) %>%
-  summarise(
-    mean = mean(fracao_fora_de_controle),
-    min = min(fracao_fora_de_controle),
-    max = max(fracao_fora_de_controle),
-    .groups = "drop"
-  )
-
-datatable(
-  ewma_geral_monte_carlo_resumo %>%
-    select(-`(λ;α)`) %>%
-    mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
-  caption = "Pontos fora de controle por Φ₁ e λ",
-  colnames = c("Valores de λ", "Valores de α", "Valores de Φ₁", "Média", "Mínimo", "Máximo")
-)
-```
-
-### Gráficos
-
-Pela análise gráfica das médias de FPFCs (Fração de Pontos Fora de Controle) notamos que $\lambda = 0.7$ é o melhor valor para detectar mudanças no processo.
-
-```{r}
-ggplotly(
-  ewma_geral_monte_carlo_resumo %>%
-    # get `(λ;α)` where (h1_phi == 0.2 and mean >= 0.05 & mean < 0.06)
-    group_by(`(λ;α)`) %>%
-    summarise(
-      h1_phi = list(h1_phi),
-      mean = list(mean),
-      .groups = "drop"
-    ) %>%
-    filter(map_lgl(mean, ~ .x[1] >= 0.05 & .x[1] < 0.06)) %>%
-    unnest(cols = c(h1_phi, mean)) %>%
-    ggplot(aes(x = h1_phi, y = mean, color = `(λ;α)`)) +
-    geom_line() +
-    geom_point() +
-    labs(
-      x = "Valores de Φ",
-      y = "Fração de pontos fora de controle",
-      color = "Valores de (λ;α)",
-      title = "FPFCs por Φ, λ e α"
-    ) +
-    theme.base
-) %>%
-  plotly.base
-```
-
-E, a distribuição dos PFCs.
-
-```{r warning=FALSE}
-ggplotly(
-  ewma_geral_monte_carlo %>%
-    ggplot(aes(x = factor(h1_phi), y = fracao_fora_de_controle, fill = `(λ;α)`)) +
-    geom_boxplot() +
-    labs(
-      x = "Valores de Φ",
-      y = "Fração de pontos fora de controle",
-      fill = "Valores de (λ;α)",
-        title = "FPFCs por Φ, λ e α"
-    ) +
-    theme.base
-  ) %>%
-  plotly.base %>%
-  layout(boxmode = 'group')
-
-```
-
-Observando que ao aumentar o valor de $\alpha$, mantendo $\lambda$ fixo, há um leve aumento na variabilidade da fração de pontos fora de controle. E, ao aumentar o valor de $\lambda$, mantendo $\alpha$ fixo, há uma redução significativa dessa variabilidade.
-
-## Comparando os resultados
-
-Nota-se que houve um aumento de poder considerável.
-
-```{r}
-estatisticas_ewma_resumo_combinadas <- bind_rows(
-  ewma_geral_monte_carlo_resumo %>%
-    filter(`(λ;α)` == "0.3;0.02") %>%
-    rename(parametro = `(λ;α)`) %>% mutate(algoritmo = "EWMA(λ,α)"),
-  ewma_monte_carlo_resumo %>%
-    filter(lambda == 0.7) %>%
-    rename(parametro = lambda) %>% mutate(algoritmo = "EWMA(λ)")
-) %>%
-  select(algoritmo, parametro, h1_phi, mean) %>%
-  mutate(
-    parametro = as.factor(parametro)
-  )
-```
-
-
-
-```{r}
-ggplotly(
-  estatisticas_ewma_resumo_combinadas %>%
-    ggplot() +
-    geom_line(
-      aes(x = h1_phi, y = mean, color = parametro, linetype = algoritmo)
-    ) +
-    geom_point(
-      aes(x = h1_phi, y = mean, color = parametro, shape = algoritmo)
-    ) +
-    labs(
-      x = "Valores de Φ₁",
-      y = "Fração de pontos fora de controle",
-      linetype = "Algoritmo",
-      title = "Fração de pontos fora de controle",
-      color = "Valores dos parâmetros",
-      shape = "Algoritmo"
-    ) +
-    theme.base
-) %>%
-  plotly.base
-```
 
 
 # EWMA-AR
@@ -782,7 +642,10 @@ ewma_ar_residuos <- function(dados, ewma) {
 }
 
 # Função para computar o EWMA-AR
-ewma_ar <- function(dados, lambda, x0 = NULL, desvio = NULL) {
+ewma_ar <- function(dados,
+                    lambda,
+                    x0 = NULL,
+                    desvio = NULL) {
   desv <- ifelse(is.null(desvio), sqrt(sd(dados)), desvio)
   n <- length(dados)
   final <- ifelse(is.null(x0), n, n + 1)
@@ -800,15 +663,17 @@ ewma_ar <- function(dados, lambda, x0 = NULL, desvio = NULL) {
   total_fora_de_controle <- sum(fora_de_controle, na.rm = TRUE)
   fracao_fora_de_controle <- total_fora_de_controle / length(ewma)
   
-  return(list(
-    ewma = ewma,
-    residuos = ewma_ar_residuos(dados, ewma_serie),
-    LI = LI,
-    LS = LS,
-    fora_de_controle = fora_de_controle,
-    total_fora_de_controle = total_fora_de_controle,
-    fracao_fora_de_controle = fracao_fora_de_controle
-  ))
+  return(
+    list(
+      ewma = ewma,
+      residuos = ewma_ar_residuos(dados, ewma_serie),
+      LI = LI,
+      LS = LS,
+      fora_de_controle = fora_de_controle,
+      total_fora_de_controle = total_fora_de_controle,
+      fracao_fora_de_controle = fracao_fora_de_controle
+    )
+  )
 }
 ```
 
@@ -821,7 +686,7 @@ lambda_otimo_optimize <- function(amostra_inicial) {
     ew <- ewma_ar(amostra_inicial, lambda = x)
     
     erros <- ew$residuos
-    soma_quadrados <- sum(erros^2)
+    soma_quadrados <- sum(erros ^ 2)
     if (soma_quadrados < minimo) {
       minimo <- soma_quadrados
       lambda <- x
@@ -830,18 +695,11 @@ lambda_otimo_optimize <- function(amostra_inicial) {
   return(list(lambda = lambda, minimo = minimo))
 }
 
-ewmar_lambda_otimo <- cache_dados(
-  "ewmaar-lambda-otimo",
-  \() {
-    data.frame(
-      id = 1:100
-    ) %>%
+ewmar_lambda_otimo <- cache_dados("ewmaar-lambda-otimo", \() {
+  data.frame(id = 1:100) %>%
     rowwise() %>%
     mutate(
-      h0_amostra = list(barma.sim(
-        n = nH0,
-        phi = phi_parametro
-      )),
+      h0_amostra = list(barma.sim(n = nH0, phi = phi_parametro)),
       h0_phi = list(barma.phi_estimado(h0_amostra)),
       h0_residuos = list(barma.residuos(h0_amostra, h0_phi)),
       ewma_ar = list(lambda_otimo_optimize(h0_residuos)),
@@ -849,8 +707,7 @@ ewmar_lambda_otimo <- cache_dados(
       minimo = ewma_ar$minimo
     ) %>%
     select(-ewma_ar)
-  }
-)
+})
 ```
 
 
@@ -874,26 +731,21 @@ Por simulação encontramos um $\lambda$ ótimo de $\sim 0.07$. Com erro médio 
 
 
 ```{r}
-ewmaar_monte_carlo <- cache_dados(
-  "simulacao-ewma-ar",
-  function() {
-    gerador_monte_carlo(
-      parametros = list(
-        lambda = seq(0.01, 0.1, by = 0.01)
-      )
+ewmaar_monte_carlo <- cache_dados("simulacao-ewma-ar", function() {
+  gerador_monte_carlo(parametros = list(lambda = seq(0.01, 0.1, by = 0.01))) %>%
+    mutate(
+      ewma_ar = list(ewma_ar(
+        h1_controle, lambda, h0_amostras[nH0], sd(h0_amostras)
+      )),
+      ewma = list(ewma_ar$ewma),
+      LI = list(ewma_ar$LI),
+      LS = list(ewma_ar$LS),
+      fora_de_controle = list(ewma_ar$fora_de_controle),
+      total_fora_de_controle = ewma_ar$total_fora_de_controle,
+      fracao_fora_de_controle = ewma_ar$fracao_fora_de_controle
     ) %>%
-      mutate(
-        ewma_ar = list(ewma_ar(h1_controle, lambda, h0_amostras[nH0], sd(h0_amostras))),
-        ewma = list(ewma_ar$ewma),
-        LI = list(ewma_ar$LI),
-        LS = list(ewma_ar$LS),
-        fora_de_controle = list(ewma_ar$fora_de_controle),
-        total_fora_de_controle = ewma_ar$total_fora_de_controle,
-        fracao_fora_de_controle = ewma_ar$fracao_fora_de_controle
-      ) %>%
-      select(-ewma_ar)
-  }
-)
+    select(-ewma_ar)
+})
 
 ewmaar_monte_carlo$lambda <- as.factor(ewmaar_monte_carlo$lambda)
 ```
@@ -909,18 +761,26 @@ ggplotly(
     filter(k == 1 & lambda == 0.07) %>% # Apenas a primeira execução
     select(h1_phi, h1_controle, LI, LS, fora_de_controle, lambda) %>%
     rename(`Φ₁` = h1_phi) %>%
-    mutate(
-      observacao = list(1:nH1)
-    ) %>%
-    unnest(
-      cols = c(`Φ₁`, observacao, h1_controle, LI, LS, fora_de_controle)
-    ) %>%
+    mutate(observacao = list(1:nH1)) %>%
+    unnest(cols = c(
+      `Φ₁`, observacao, h1_controle, LI, LS, fora_de_controle
+    )) %>%
     ggplot() +
-    geom_line(aes(x = observacao, y = LI, color = "Limite Inferior"), linetype = "dashed") +
-    geom_line(aes(x = observacao, y = LS, color = "Limite Superior"), linetype = "dashed") +
-    geom_line(aes(x = observacao, y = h1_controle, color = "Série")) +
-    geom_point(data = . %>% filter(fora_de_controle),
-               aes(x = observacao, y = h1_controle, color = "Fora de controle"), size = 1, shape = 4) +
+    geom_line(aes(
+      x = observacao, y = LI, color = "Limite Inferior"
+    ), linetype = "dashed") +
+    geom_line(aes(
+      x = observacao, y = LS, color = "Limite Superior"
+    ), linetype = "dashed") +
+    geom_line(aes(
+      x = observacao, y = h1_controle, color = "Série"
+    )) +
+    geom_point(
+      data = . %>% filter(fora_de_controle),
+      aes(x = observacao, y = h1_controle, color = "Fora de controle"),
+      size = 1,
+      shape = 4
+    ) +
     labs(x = "Observação", y = "Caracterísitca", color = "Legenda") +
     scale_color_manual(
       values = c(
@@ -930,14 +790,9 @@ ggplotly(
         "Fora de controle" = adjustcolor("#f42f2f", alpha.f = 0.6)
       )
     ) +
-    labs(
-      title = "EWMA para resíduos βAR(1), com λ = 0.08",
-    ) +
+    labs(title = "EWMA para resíduos βAR(1), com λ = 0.08", ) +
     theme.base +
-    theme(
-      legend.position = "bottom",
-      legend.title = element_blank()
-    ) +
+    theme(legend.position = "bottom", legend.title = element_blank()) +
     facet_wrap(vars(`Φ₁`), ncol = 2, labeller = "label_both")
 ) %>%
   plotly.base
@@ -960,7 +815,7 @@ ewmaar_monte_carlo_resumo <- ewmaar_monte_carlo %>%
 
 datatable(
   ewmaar_monte_carlo_resumo %>%
-   mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
+    mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
   caption = "Pontos fora de controle por Φ₁ e λ",
   colnames = c("Valores de λ", "Valores de Φ₁", "Média", "Mínimo", "Máximo")
 )
@@ -975,16 +830,18 @@ E, de uma forma geral, possui um resultado menos satisfatório que o EWMA sobre 
 ```{r}
 ggplotly(
   ewmaar_monte_carlo_resumo %>%
-      ggplot(aes(x = h1_phi, y = mean, color = lambda)) +
-      geom_line() +
-      geom_point() +
-      labs(
-        x = "Valores de Φ",
-        y = "Fração de pontos fora de controle",
-        color = "Valores de λ",
-        title = "FPFCs por Φ e λ"
-      ) +
-      theme.base
+    ggplot(aes(
+      x = h1_phi, y = mean, color = lambda
+    )) +
+    geom_line() +
+    geom_point() +
+    labs(
+      x = "Valores de Φ",
+      y = "Fração de pontos fora de controle",
+      color = "Valores de λ",
+      title = "FPFCs por Φ e λ"
+    ) +
+    theme.base
 ) %>%
   plotly.base
 ```
@@ -994,16 +851,20 @@ E, a distribuição dos PFCs.
 ```{r warning=FALSE}
 ggplotly(
   ewmaar_monte_carlo %>%
-    ggplot(aes(x = factor(h1_phi), y = fracao_fora_de_controle, fill = lambda)) +
+    ggplot(aes(
+      x = factor(h1_phi),
+      y = fracao_fora_de_controle,
+      fill = lambda
+    )) +
     geom_boxplot() +
     labs(
       x = "Valores de Φ",
       y = "Fração de pontos fora de controle",
       fill = "Valores de λ",
-        title = "FPFCs por Φ e λ"
+      title = "FPFCs por Φ e λ"
     ) +
     theme.base
-  ) %>%
+) %>%
   plotly.base %>%
   layout(boxmode = 'group')
 
@@ -1031,12 +892,10 @@ Já a constante $H$, chamada de _limite de decisão_, é definida como o valor q
 
 
 ```{r}
-cusum_qcc <- function(
-    amostra_inicial_,
-    desvio_detectavel = 1,
-    intervalo_de_decisao = 5,
-    amostra_subsequente = NULL
-  ) {
+cusum_qcc <- function(amostra_inicial_,
+                      desvio_detectavel = 1,
+                      intervalo_de_decisao = 5,
+                      amostra_subsequente = NULL) {
   arguments <- list(
     data = amostra_inicial_,
     se.shift = desvio_detectavel,
@@ -1059,7 +918,11 @@ cusum_qcc <- function(
   neg <- cu[["neg"]][registros]
   fora_de_controle_pos <- pos > intervalo_de_decisao
   fora_de_controle_neg <- neg < -intervalo_de_decisao
-  total_fora_de_controle <- sum(fora_de_controle_pos) + sum(fora_de_controle_neg)
+  total_fora_de_controle <- sum(ifelse(
+    fora_de_controle_pos,
+    fora_de_controle_pos,
+    fora_de_controle_neg
+  ))
   fracao_fora_de_controle <- total_fora_de_controle / length(registros)
   list(
     pos = pos,
@@ -1089,25 +952,18 @@ desvio_detectavel_otimo_optimize <- function(amostra_inicial) {
   return(NA)
 }
 
-cusum_k_otimo <- cache_dados(
-  "cusum-k-otimo",
-  \() {
-    data.frame(
-      id = 1:1000
-    ) %>%
+cusum_k_otimo <- cache_dados("cusum-k-otimo", \() {
+  data.frame(id = 1:1000) %>%
     rowwise() %>%
     mutate(
       h0_amostra = list(barma.sim(
-        n = nH0,
-        phi = phi_parametro,
-        seed = id
+        n = nH0, phi = phi_parametro, seed = id
       )),
       h0_phi = list(barma.phi_estimado(h0_amostra)),
       h0_residuos = list(barma.residuos(h0_amostra, h0_phi)),
       minimo = desvio_detectavel_otimo_optimize(h0_residuos)
     )
-  }
-)
+})
 ```
 
 
@@ -1115,15 +971,14 @@ cusum_k_otimo <- cache_dados(
 ggplotly(
   cusum_k_otimo %>%
     filter(!is.na(minimo)) %>%
-    ggplot(
-      aes(x = 0, y = minimo, group = 0, fill = "red")
-    ) +
+    ggplot(aes(
+      x = 0,
+      y = minimo,
+      group = 0,
+      fill = "red"
+    )) +
     geom_boxplot() +
-    labs(
-      x = element_blank(),
-      y = "Valor ótimo de K",
-      title = "Valor ótimo de K por simulação"
-    ) +
+    labs(x = element_blank(), y = "Valor ótimo de K", title = "Valor ótimo de K por simulação") +
     theme.base +
     theme.no_legend
 ) %>%
@@ -1153,26 +1008,25 @@ kable(
 
 
 ```{r}
-cumsum_k_monte_carlo <- cache_dados(
-  "simulacao-cusum-k",
-  function() {
-    gerador_monte_carlo(
-      parametros = list(
-        desvio_detectavel = seq(0.1, 1.0, by = 0.1)
-      )
+cumsum_k_monte_carlo <- cache_dados("simulacao-cusum-k", function() {
+  gerador_monte_carlo(parametros = list(desvio_detectavel = seq(0.1, 1.0, by = 0.1))) %>%
+    mutate(
+      qcc = list(
+        cusum_qcc(
+          h0_residuos,
+          desvio_detectavel = desvio_detectavel,
+          amostra_subsequente = h1_residuos
+        )
+      ),
+      pos = list(qcc$pos),
+      neg = list(qcc$neg),
+      fora_de_controle_pos = list(qcc$fora_de_controle_pos),
+      fora_de_controle_neg = list(qcc$fora_de_controle_neg),
+      total_fora_de_controle = qcc$total_fora_de_controle,
+      fracao_fora_de_controle = qcc$fracao_fora_de_controle
     ) %>%
-      mutate(
-        qcc = list(cusum_qcc(h0_residuos, desvio_detectavel = desvio_detectavel, amostra_subsequente = h1_residuos)),
-        pos = list(qcc$pos),
-        neg = list(qcc$neg),
-        fora_de_controle_pos = list(qcc$fora_de_controle_pos),
-        fora_de_controle_neg = list(qcc$fora_de_controle_neg),
-        total_fora_de_controle = qcc$total_fora_de_controle,
-        fracao_fora_de_controle = qcc$fracao_fora_de_controle
-      ) %>%
-      select(-qcc)
-  }
-)
+    select(-qcc)
+})
 ```
 
 
@@ -1184,24 +1038,44 @@ Vamos analisar o CUSUM para o valor ótimo de `K` encontrado.
 cusum_para_k_otimo <- cumsum_k_monte_carlo %>%
   filter(k == 1 & desvio_detectavel == round(valor_otimo_k, 1)) %>%
   rename(`Φ₁` = h1_phi) %>%
-  mutate(
-    observacao = list(1:nH1)
-  )
+  mutate(observacao = list(1:nH1))
 
 ggplotly(
   cusum_para_k_otimo %>%
     unnest(
-      cols = c(`Φ₁`, observacao, pos, neg, h1_residuos, fora_de_controle_pos, fora_de_controle_neg)
+      cols = c(
+        `Φ₁`,
+        observacao,
+        pos,
+        neg,
+        h1_residuos,
+        fora_de_controle_pos,
+        fora_de_controle_neg
+      )
     ) %>%
     ggplot() +
     geom_hline(aes(yintercept = 5, color = "Limite de decisão"), linetype = "dashed") +
-    geom_hline(aes(yintercept = -5, color = "Limite de decisão"), linetype = "dashed") +
-    geom_line(aes(x = observacao, y = pos, color = "N+")) +
-    geom_line(aes(x = observacao, y = neg, color = "N-")) +
-    geom_point(data = . %>% filter(fora_de_controle_pos),
-               aes(x = observacao, y = pos, color = "Fora de controle"), size = 1, shape = 4) +
-    geom_point(data = . %>% filter(fora_de_controle_neg),
-               aes(x = observacao, y = neg, color = "Fora de controle"), size = 1, shape = 4) +
+    geom_hline(aes(
+      yintercept = -5, color = "Limite de decisão"
+    ), linetype = "dashed") +
+    geom_line(aes(
+      x = observacao, y = pos, color = "N+"
+    )) +
+    geom_line(aes(
+      x = observacao, y = neg, color = "N-"
+    )) +
+    geom_point(
+      data = . %>% filter(fora_de_controle_pos),
+      aes(x = observacao, y = pos, color = "Fora de controle"),
+      size = 1,
+      shape = 4
+    ) +
+    geom_point(
+      data = . %>% filter(fora_de_controle_neg),
+      aes(x = observacao, y = neg, color = "Fora de controle"),
+      size = 1,
+      shape = 4
+    ) +
     labs(x = "Observação", y = "Caracterísitca", color = "Legenda") +
     scale_color_manual(
       values = c(
@@ -1211,14 +1085,9 @@ ggplotly(
         "Limite de decisão" = adjustcolor("red", alpha.f = 0.5)
       )
     ) +
-    labs(
-      title = "CUSUM para resíduos βAR(1)",
-    ) +
+    labs(title = "CUSUM para resíduos βAR(1)", ) +
     theme.base +
-    theme(
-      legend.position = "bottom",
-      legend.title = element_blank()
-    ) +
+    theme(legend.position = "bottom", legend.title = element_blank()) +
     facet_wrap(vars(`Φ₁`), ncol = 2, labeller = "label_both")
 ) %>%
   plotly.base
@@ -1241,7 +1110,7 @@ cumsum_k_monte_carlo_resumo <- cumsum_k_monte_carlo %>%
 
 datatable(
   cumsum_k_monte_carlo_resumo %>%
-   mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
+    mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
   caption = "Pontos fora de controle por Φ₁ e K, com H = 5",
   colnames = c("Valores de K", "Valores de Φ₁", "Média", "Mínimo", "Máximo")
 )
@@ -1255,16 +1124,20 @@ Análise gráfica das médias de FPFCs.
 ```{r}
 ggplotly(
   cumsum_k_monte_carlo_resumo %>%
-      ggplot(aes(x = h1_phi, y = mean, color = factor(desvio_detectavel))) +
-      geom_line() +
-      geom_point() +
-      labs(
-        x = "Valores de Φ₁",
-        y = "Fração de pontos fora de controle",
-        color = "Valores de K",
-        title = "FPFCs por Φ₁ e K com H = 5"
-      ) +
-      theme.base
+    ggplot(aes(
+      x = h1_phi,
+      y = mean,
+      color = factor(desvio_detectavel)
+    )) +
+    geom_line() +
+    geom_point() +
+    labs(
+      x = "Valores de Φ₁",
+      y = "Fração de pontos fora de controle",
+      color = "Valores de K",
+      title = "FPFCs por Φ₁ e K com H = 5"
+    ) +
+    theme.base
 ) %>%
   plotly.base
 ```
@@ -1275,16 +1148,20 @@ E, a distribuição dos PFCs.
 ```{r warning=FALSE}
 ggplotly(
   cumsum_k_monte_carlo %>%
-    ggplot(aes(x = factor(h1_phi), y = fracao_fora_de_controle, fill = factor(desvio_detectavel))) +
+    ggplot(aes(
+      x = factor(h1_phi),
+      y = fracao_fora_de_controle,
+      fill = factor(desvio_detectavel)
+    )) +
     geom_boxplot() +
     labs(
       x = "Valores de Φ₁",
       y = "Fração de pontos fora de controle",
       fill = "Valores de K",
-        title = "FPFCs por Φ₁ e K com H = 5"
+      title = "FPFCs por Φ₁ e K com H = 5"
     ) +
     theme.base
-  ) %>%
+) %>%
   plotly.base %>%
   layout(boxmode = 'group')
 
@@ -1307,25 +1184,18 @@ intervalo_de_decisao_otimo_optimize <- function(amostra_inicial) {
   return(NA)
 }
 
-cusum_h_otimo <- cache_dados(
-  "cusum-h-otimo",
-  \() {
-    data.frame(
-      id = 1:1000
-    ) %>%
+cusum_h_otimo <- cache_dados("cusum-h-otimo", \() {
+  data.frame(id = 1:1000) %>%
     rowwise() %>%
     mutate(
       h0_amostra = list(barma.sim(
-        n = nH0,
-        phi = phi_parametro,
-        seed = id
+        n = nH0, phi = phi_parametro, seed = id
       )),
       h0_phi = list(barma.phi_estimado(h0_amostra)),
       h0_residuos = list(barma.residuos(h0_amostra, h0_phi)),
       minimo = intervalo_de_decisao_otimo_optimize(h0_residuos)
     )
-  }
-)
+})
 ```
 
 
@@ -1334,15 +1204,14 @@ cusum_h_otimo <- cache_dados(
 ggplotly(
   cusum_h_otimo %>%
     filter(!is.na(minimo)) %>%
-    ggplot(
-      aes(x = 0, y = minimo, group = 0, fill = "red")
-    ) +
+    ggplot(aes(
+      x = 0,
+      y = minimo,
+      group = 0,
+      fill = "red"
+    )) +
     geom_boxplot() +
-    labs(
-      x = element_blank(),
-      y = "Valor ótimo de K",
-      title = "Valor ótimo de K por simulação"
-    ) +
+    labs(x = element_blank(), y = "Valor ótimo de K", title = "Valor ótimo de K por simulação") +
     theme.base +
     theme.no_legend
 ) %>%
@@ -1372,26 +1241,25 @@ kable(
 
 
 ```{r}
-cumsum_h_monte_carlo <- cache_dados(
-  "simulacao-cusum-h",
-  function() {
-    gerador_monte_carlo(
-      parametros = list(
-        intervalo_de_decisao = seq(1, 6, by = 1)
-      )
+cumsum_h_monte_carlo <- cache_dados("simulacao-cusum-h", function() {
+  gerador_monte_carlo(parametros = list(intervalo_de_decisao = seq(1, 6, by = 1))) %>%
+    mutate(
+      qcc = list(
+        cusum_qcc(
+          h0_residuos,
+          intervalo_de_decisao = intervalo_de_decisao,
+          amostra_subsequente = h1_residuos
+        )
+      ),
+      pos = list(qcc$pos),
+      neg = list(qcc$neg),
+      fora_de_controle_pos = list(qcc$fora_de_controle_pos),
+      fora_de_controle_neg = list(qcc$fora_de_controle_neg),
+      total_fora_de_controle = qcc$total_fora_de_controle,
+      fracao_fora_de_controle = qcc$fracao_fora_de_controle
     ) %>%
-      mutate(
-        qcc = list(cusum_qcc(h0_residuos, intervalo_de_decisao = intervalo_de_decisao, amostra_subsequente = h1_residuos)),
-        pos = list(qcc$pos),
-        neg = list(qcc$neg),
-        fora_de_controle_pos = list(qcc$fora_de_controle_pos),
-        fora_de_controle_neg = list(qcc$fora_de_controle_neg),
-        total_fora_de_controle = qcc$total_fora_de_controle,
-        fracao_fora_de_controle = qcc$fracao_fora_de_controle
-      ) %>%
-      select(-qcc)
-  }
-)
+    select(-qcc)
+})
 ```
 
 
@@ -1403,24 +1271,44 @@ Vamos analisar o CUSUM para o valor ótimo de `K` encontrado.
 cusum_para_h_otimo <- cumsum_h_monte_carlo %>%
   filter(k == 1 & intervalo_de_decisao == round(valor_otimo_h)) %>%
   rename(`Φ₁` = h1_phi) %>%
-  mutate(
-    observacao = list(1:nH1)
-  )
+  mutate(observacao = list(1:nH1))
 
 ggplotly(
   cusum_para_h_otimo %>%
     unnest(
-      cols = c(`Φ₁`, observacao, pos, neg, h1_residuos, fora_de_controle_pos, fora_de_controle_neg)
+      cols = c(
+        `Φ₁`,
+        observacao,
+        pos,
+        neg,
+        h1_residuos,
+        fora_de_controle_pos,
+        fora_de_controle_neg
+      )
     ) %>%
     ggplot() +
     geom_hline(aes(yintercept = 5, color = "Limite de decisão"), linetype = "dashed") +
-    geom_hline(aes(yintercept = -5, color = "Limite de decisão"), linetype = "dashed") +
-    geom_line(aes(x = observacao, y = pos, color = "N+")) +
-    geom_line(aes(x = observacao, y = neg, color = "N-")) +
-    geom_point(data = . %>% filter(fora_de_controle_pos),
-               aes(x = observacao, y = pos, color = "Fora de controle"), size = 1, shape = 4) +
-    geom_point(data = . %>% filter(fora_de_controle_neg),
-               aes(x = observacao, y = neg, color = "Fora de controle"), size = 1, shape = 4) +
+    geom_hline(aes(
+      yintercept = -5, color = "Limite de decisão"
+    ), linetype = "dashed") +
+    geom_line(aes(
+      x = observacao, y = pos, color = "N+"
+    )) +
+    geom_line(aes(
+      x = observacao, y = neg, color = "N-"
+    )) +
+    geom_point(
+      data = . %>% filter(fora_de_controle_pos),
+      aes(x = observacao, y = pos, color = "Fora de controle"),
+      size = 1,
+      shape = 4
+    ) +
+    geom_point(
+      data = . %>% filter(fora_de_controle_neg),
+      aes(x = observacao, y = neg, color = "Fora de controle"),
+      size = 1,
+      shape = 4
+    ) +
     labs(x = "Observação", y = "Caracterísitca", color = "Legenda") +
     scale_color_manual(
       values = c(
@@ -1430,14 +1318,9 @@ ggplotly(
         "Limite de decisão" = adjustcolor("red", alpha.f = 0.5)
       )
     ) +
-    labs(
-      title = "CUSUM para resíduos βAR(1)",
-    ) +
+    labs(title = "CUSUM para resíduos βAR(1)", ) +
     theme.base +
-    theme(
-      legend.position = "bottom",
-      legend.title = element_blank()
-    ) +
+    theme(legend.position = "bottom", legend.title = element_blank()) +
     facet_wrap(vars(`Φ₁`), ncol = 2, labeller = "label_both")
 ) %>%
   plotly.base
@@ -1460,7 +1343,7 @@ cumsum_h_monte_carlo_resumo <- cumsum_h_monte_carlo %>%
 
 datatable(
   cumsum_h_monte_carlo_resumo %>%
-   mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
+    mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
   caption = "Pontos fora de controle por Φ₁ e H, com K = 1",
   colnames = c("Valores de H", "Valores de Φ₁", "Média", "Mínimo", "Máximo")
 )
@@ -1474,16 +1357,20 @@ Análise gráfica das médias de FPFCs.
 ```{r}
 ggplotly(
   cumsum_h_monte_carlo_resumo %>%
-      ggplot(aes(x = h1_phi, y = mean, color = factor(intervalo_de_decisao))) +
-      geom_line() +
-      geom_point() +
-      labs(
-        x = "Valores de Φ₁",
-        y = "Fração de pontos fora de controle",
-        color = "Valores de H",
-        title = "FPFCs por Φ₁ e H, com K = 1",
-      ) +
-      theme.base
+    ggplot(aes(
+      x = h1_phi,
+      y = mean,
+      color = factor(intervalo_de_decisao)
+    )) +
+    geom_line() +
+    geom_point() +
+    labs(
+      x = "Valores de Φ₁",
+      y = "Fração de pontos fora de controle",
+      color = "Valores de H",
+      title = "FPFCs por Φ₁ e H, com K = 1",
+    ) +
+    theme.base
 ) %>%
   plotly.base
 ```
@@ -1494,16 +1381,20 @@ E, a distribuição dos PFCs.
 ```{r warning=FALSE}
 ggplotly(
   cumsum_h_monte_carlo %>%
-    ggplot(aes(x = factor(h1_phi), y = fracao_fora_de_controle, fill = factor(intervalo_de_decisao))) +
+    ggplot(aes(
+      x = factor(h1_phi),
+      y = fracao_fora_de_controle,
+      fill = factor(intervalo_de_decisao)
+    )) +
     geom_boxplot() +
     labs(
       x = "Valores de Φ₁",
       y = "Fração de pontos fora de controle",
       fill = "Valores de K",
-        title = "FPFCs por Φ₁ e K com H = 5"
+      title = "FPFCs por Φ₁ e K com H = 5"
     ) +
     theme.base
-  ) %>%
+) %>%
   plotly.base %>%
   layout(boxmode = 'group')
 
@@ -1516,30 +1407,29 @@ ggplotly(
 Vamos verificar se existe alguma combinação ótima entre os valores de `K` e `H` para detectar pontos fora de controle.
 
 ```{r}
-comb_cusum <- cache_dados(
-  "simulacao-cusum-k-h",
-  function() {
-    gerador_monte_carlo(
-      parametros = expand.grid(
-        desvio_detectavel = seq(0.6, 1.8, by = 0.2),
-        intervalo_de_decisao = seq(3, 6, by = 1)
-      )
+comb_cusum <- cache_dados("simulacao-cusum-k-h", function() {
+  gerador_monte_carlo(parametros = expand.grid(
+    desvio_detectavel = seq(0.6, 1.8, by = 0.2),
+    intervalo_de_decisao = seq(3, 6, by = 1)
+  )) %>%
+    mutate(
+      qcc = list(
+        cusum_qcc(
+          h0_residuos,
+          desvio_detectavel = desvio_detectavel,
+          intervalo_de_decisao = intervalo_de_decisao,
+          amostra_subsequente = h1_residuos
+        )
+      ),
+      pos = list(qcc$pos),
+      neg = list(qcc$neg),
+      fora_de_controle_pos = list(qcc$fora_de_controle_pos),
+      fora_de_controle_neg = list(qcc$fora_de_controle_neg),
+      total_fora_de_controle = qcc$total_fora_de_controle,
+      fracao_fora_de_controle = qcc$fracao_fora_de_controle
     ) %>%
-      mutate(
-        qcc = list(cusum_qcc(h0_residuos,
-                             desvio_detectavel = desvio_detectavel,
-                             intervalo_de_decisao = intervalo_de_decisao,
-                             amostra_subsequente = h1_residuos)),
-        pos = list(qcc$pos),
-        neg = list(qcc$neg),
-        fora_de_controle_pos = list(qcc$fora_de_controle_pos),
-        fora_de_controle_neg = list(qcc$fora_de_controle_neg),
-        total_fora_de_controle = qcc$total_fora_de_controle,
-        fracao_fora_de_controle = qcc$fracao_fora_de_controle
-      ) %>%
-      select(-qcc)
-  }
-)
+    select(-qcc)
+})
 ```
 
 ### Resultados
@@ -1560,9 +1450,16 @@ comb_cusum_resumo <- comb_cusum %>%
 
 datatable(
   comb_cusum_resumo %>%
-   mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
+    mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
   caption = "Pontos fora de controle",
-  colnames = c("Valores de K", "Valores de H", "Valores de Φ₁", "Média", "Mínimo", "Máximo")
+  colnames = c(
+    "Valores de K",
+    "Valores de H",
+    "Valores de Φ₁",
+    "Média",
+    "Mínimo",
+    "Máximo"
+  )
 )
 ```
 
@@ -1578,7 +1475,14 @@ ggplotly(
     ) %>%
     filter(map_lgl(mean, ~ .x[1] >= 0.05 & .x[1] < 0.06)) %>%
     unnest(cols = c(h1_phi, mean)) %>%
-    ggplot(aes(x = h1_phi, y = mean, color = desvio_detectavel, linetype = intervalo_de_decisao)) +
+    ggplot(
+      aes(
+        x = h1_phi,
+        y = mean,
+        color = desvio_detectavel,
+        linetype = intervalo_de_decisao
+      )
+    ) +
     geom_line() +
     geom_point() +
     labs(
@@ -1622,17 +1526,16 @@ estatisticas_resumo_combinadas <- bind_rows(
     rename(parametro = intervalo_de_decisao),
   comb_cusum_resumo %>%
     filter(desvio_detectavel == 0.8 & intervalo_de_decisao == 5) %>%
-    mutate(
-      `(K,H)` = as.factor(paste(intervalo_de_decisao, desvio_detectavel, sep = ";")),
-      algoritmo = "CUSUM(K,H)"
-    ) %>%
+    mutate(`(K,H)` = as.factor(
+      paste(intervalo_de_decisao, desvio_detectavel, sep = ";")
+    ), algoritmo = "CUSUM(K,H)") %>%
     rename(parametro = `(K,H)`),
-  estatisticas_ewma_resumo_combinadas
+  ewma_monte_carlo_resumo %>%
+    filter(lambda == 0.7) %>%
+    rename(parametro = lambda) %>% mutate(algoritmo = "EWMA(λ)")
 ) %>%
   select(algoritmo, parametro, h1_phi, mean) %>%
-  mutate(
-    parametro = as.factor(parametro)
-  )
+  mutate(parametro = as.factor(parametro))
 ```
 
 
@@ -1641,12 +1544,18 @@ estatisticas_resumo_combinadas <- bind_rows(
 ggplotly(
   estatisticas_resumo_combinadas %>%
     ggplot() +
-    geom_line(
-      aes(x = h1_phi, y = mean, color = parametro, linetype = algoritmo)
-    ) +
-    geom_point(
-      aes(x = h1_phi, y = mean, color = parametro, shape = algoritmo)
-    ) +
+    geom_line(aes(
+      x = h1_phi,
+      y = mean,
+      color = parametro,
+      linetype = algoritmo
+    )) +
+    geom_point(aes(
+      x = h1_phi,
+      y = mean,
+      color = parametro,
+      shape = algoritmo
+    )) +
     labs(
       x = "Valores de Φ₁",
       y = "Fração de pontos fora de controle",
@@ -1679,30 +1588,17 @@ estatisticas_combinadas <- bind_rows(
     rename(parametro = intervalo_de_decisao),
   comb_cusum %>%
     filter(desvio_detectavel == 0.8 & intervalo_de_decisao == 5) %>%
-    mutate(
-      `(K,H)` = as.factor(paste(intervalo_de_decisao, desvio_detectavel, sep = ";")),
-      algoritmo = "CUSUM(K,H)"
-    ) %>%
+    mutate(`(K,H)` = as.factor(
+      paste(intervalo_de_decisao, desvio_detectavel, sep = ";")
+    ), algoritmo = "CUSUM(K,H)") %>%
     rename(parametro = `(K,H)`),
   ewma_monte_carlo %>%
-    mutate(
-      lambda = as.factor(lambda),
-      algoritmo = "EWMA(λ)"
-    ) %>%
+    mutate(lambda = as.factor(lambda), algoritmo = "EWMA(λ)") %>%
     filter(lambda == 0.7) %>%
-    rename(parametro = lambda),
-  ewma_geral_monte_carlo %>%
-    mutate(
-      algoritmo = "EWMA(λ,α)"
-    ) %>%
-    filter(`(λ;α)` == "0.3;0.02") %>%
-    rename(parametro = `(λ;α)`)
+    rename(parametro = lambda)
 ) %>%
   select(algoritmo, parametro, h1_phi, fracao_fora_de_controle) %>%
-  mutate(
-    parametro = as.factor(parametro),
-    h1_phi = as.factor(h1_phi)
-  )
+  mutate(parametro = as.factor(parametro), h1_phi = as.factor(h1_phi))
 ```
 
 
@@ -1711,7 +1607,12 @@ ggplotly(
   estatisticas_combinadas %>%
     ggplot() +
     geom_boxplot(
-      aes(x = h1_phi, y = fracao_fora_de_controle, fill = parametro, shape = algoritmo),
+      aes(
+        x = h1_phi,
+        y = fracao_fora_de_controle,
+        fill = parametro,
+        shape = algoritmo
+      ),
     ) +
     labs(
       x = "Valores de Φ₁",
@@ -1721,7 +1622,7 @@ ggplotly(
       title = "Fração de pontos fora de controle",
       color = "Valores dos parâmetros"
     ) +
-    facet_wrap(~algoritmo) +
+    facet_wrap( ~ algoritmo) +
     theme.base
 ) %>%
   plotly.base %>%
@@ -1735,43 +1636,47 @@ A partir da análise da média dos pontos fora de controle, observa-se que o CUS
 Já a análise gráfica dos boxplots mostra que o CUSUM(K) possui uma variabilidade, em geral, maior que o CUSUM(H), enquanto o EWMA possui, em geral, a menor variabilidade entre os algoritmos.
 
 
-## E se... combinarmos os dois algoritmos?
+# E se... combinarmos os dois algoritmos?
 
 Vamos combinar EWMA e CUSUM e ver o que acontece.
 
 
 ```{r}
-comb_monte_carlo <- cache_dados(
-  "simulacao-ewma-cusum",
-  function() {
-    gerador_monte_carlo(
-      parametros = expand.grid(
-        desvio_detectavel = seq(0.6, 1.2, by = 0.2),
-        intervalo_de_decisao = seq(2, 5, by = 1),
-        lambda = seq(0.2, 1.0, by = 0.2),
-        alfa = seq(0.03, 0.1, by = 0.03)
+comb_monte_carlo <- cache_dados("simulacao-ewma-cusum", function() {
+  gerador_monte_carlo(
+    parametros = expand.grid(
+      desvio_detectavel = seq(0.2, 1.6, by = 0.2),
+      intervalo_de_decisao = seq(1, 6, by = 1),
+      lambda = seq(0.1, 1.0, by = 0.1)
+    ),
+    numero_de_execucoes = 50
+  ) %>%
+    mutate(
+      "(K;H;λ)" = factor(
+        paste(desvio_detectavel, intervalo_de_decisao, lambda, sep = ";")
       ),
-      numero_de_execucoes = 50
+      ewma = list(ewma_qcc(h0_residuos, lambda, h1_residuos)),
+      cumsum = list(
+        cusum_qcc(
+          h0_residuos,
+          desvio_detectavel = desvio_detectavel,
+          intervalo_de_decisao = intervalo_de_decisao,
+          amostra_subsequente = h1_residuos
+        )
+      ),
+      fora_de_controle_coop = list(
+        ewma$fora_de_controle |
+          (cumsum$fora_de_controle_pos | cumsum$fora_de_controle_neg)
+      ),
+      fracao_fora_de_controle_coop = sum(fora_de_controle_coop) / nH1,
+      fora_de_controle_opos = list(
+        ewma$fora_de_controle &
+          (cumsum$fora_de_controle_pos | cumsum$fora_de_controle_neg)
+      ),
+      fracao_fora_de_controle_opos = sum(fora_de_controle_opos) / nH1
     ) %>%
-      mutate(
-        "(K;H;λ;α)" = factor(paste(desvio_detectavel, intervalo_de_decisao, lambda, alfa, sep = ";")),
-        ewma = list(ewma_qcc(h0_residuos, lambda, h1_residuos, qnorm(1 - alfa))),
-        cumsum = list(cusum_qcc(h0_residuos,
-                                desvio_detectavel = desvio_detectavel,
-                                intervalo_de_decisao = intervalo_de_decisao,
-                                amostra_subsequente = h1_residuos)),
-        fora_de_controle_coop = list(
-          ewma$fora_de_controle | (cumsum$fora_de_controle_pos | cumsum$fora_de_controle_neg)
-        ),
-        fracao_fora_de_controle_coop = sum(fora_de_controle_coop) / nH1,
-        fora_de_controle_opos = list(
-          ewma$fora_de_controle & (cumsum$fora_de_controle_pos | cumsum$fora_de_controle_neg)
-        ),
-        fracao_fora_de_controle_opos = sum(fora_de_controle_opos) / nH1
-      ) %>%
-      select(-ewma, -cumsum)
-  }
-)
+    select(-ewma, -cumsum)
+})
 ```
 
 ### EWMA + CUSUM
@@ -1782,20 +1687,32 @@ Nesta forma mantemos o nível de significância para ambos os algoritmos em 5%.
 
 ```{r}
 comb_coop_monte_carlo_resumo <- comb_monte_carlo %>%
-  group_by(`(K;H;λ;α)`, h1_phi, desvio_detectavel, lambda, alfa) %>%
+  group_by(`(K;H;λ)`, h1_phi, desvio_detectavel, lambda) %>%
   summarise(
     mean = mean(fracao_fora_de_controle_coop),
     min = min(fracao_fora_de_controle_coop),
     max = max(fracao_fora_de_controle_coop),
     .groups = "drop"
-  )
+  ) %>%
+  group_by(`(K;H;λ)`) %>%
+  summarise(
+    h1_phi = list(h1_phi),
+    desvio_detectavel = list(desvio_detectavel),
+    lambda = list(lambda),
+    mean = list(mean),
+    min = list(min),
+    max = list(max),
+    .groups = "drop"
+  ) %>%
+  filter(map_lgl(mean, ~ .x[1] >= 0.05 & .x[1] < 0.06)) %>%
+  unnest(cols = c(h1_phi, desvio_detectavel, lambda, mean, min, max))
 
 datatable(
   comb_coop_monte_carlo_resumo %>%
-    select(-`(K;H;λ;α)`) %>%
+    select(-`(K;H;λ)`) %>%
     mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
-  caption = "Pontos fora de controle por Φ₁ e (K;H;λ;α)",
-  colnames = c("Valores de Φ₁", "K", "H", "λ", "α", "Média", "Mínimo", "Máximo")
+  caption = "Pontos fora de controle por Φ₁ e (K;H;λ)",
+  colnames = c("Valores de Φ₁", "K", "H", "λ", "Média", "Mínimo", "Máximo")
 )
 ```
 
@@ -1803,23 +1720,24 @@ datatable(
 ```{r}
 ggplotly(
   comb_coop_monte_carlo_resumo %>%
-    # get `(K;H;λ;α)` where h1_phi == 0.2 and mean >= 0.05 & mean < 0.06
-    group_by(`(K;H;λ;α)`) %>%
+    group_by(`(K;H;λ)`) %>%
     summarise(
       h1_phi = list(h1_phi),
       mean = list(mean),
       .groups = "drop"
     ) %>%
-    filter(map_lgl(mean, ~ .x[1] < 0.08)) %>%
+    filter(map_lgl(mean, ~ .x[1] >= 0.05 & .x[1] < 0.06)) %>%
     unnest(cols = c(h1_phi, mean)) %>%
-    ggplot(aes(x = h1_phi, y = mean, color = `(K;H;λ;α)`)) +
+    ggplot(aes(
+      x = h1_phi, y = mean, color = `(K;H;λ)`
+    )) +
     geom_line() +
     geom_point() +
     labs(
       x = "Valores de Φ₁",
       y = "Fração de pontos fora de controle",
-      color = "Constantes (K;H;λ;α)",
-      title = "FPFC por Φ₁ e (K;H;λ;α)"
+      color = "Constantes (K;H;λ)",
+      title = "FPFC por Φ₁ e (K;H;λ) (coop)"
     ) +
     theme.base
 ) %>%
@@ -1835,20 +1753,32 @@ Fazendo isso, diminui-se o nível de significância para cada um dos algoritmos.
 
 ```{r}
 comb_opos_monte_carlo_resumo <- comb_monte_carlo %>%
-  group_by(`(K;H;λ;α)`, h1_phi, desvio_detectavel, lambda, alfa) %>%
+  group_by(`(K;H;λ)`, h1_phi, desvio_detectavel, lambda) %>%
   summarise(
     mean = mean(fracao_fora_de_controle_opos),
     min = min(fracao_fora_de_controle_opos),
     max = max(fracao_fora_de_controle_opos),
     .groups = "drop"
-  )
+  ) %>%
+  group_by(`(K;H;λ)`) %>%
+  summarise(
+    h1_phi = list(h1_phi),
+    desvio_detectavel = list(desvio_detectavel),
+    lambda = list(lambda),
+    mean = list(mean),
+    min = list(min),
+    max = list(max),
+    .groups = "drop"
+  ) %>%
+  filter(map_lgl(mean, ~ .x[1] >= 0.05 & .x[1] < 0.06)) %>%
+  unnest(cols = c(h1_phi, desvio_detectavel, lambda, mean, min, max))
 
 datatable(
   comb_opos_monte_carlo_resumo %>%
-    select(-`(K;H;λ;α)`) %>%
+    select(-`(K;H;λ)`) %>%
     mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
-  caption = "Pontos fora de controle por Φ₁ e (K;H;λ;α)",
-  colnames = c("Valores de Φ₁", "K", "H", "λ", "α", "Média", "Mínimo", "Máximo")
+  caption = "Pontos fora de controle por Φ₁ e (K;H;λ)",
+  colnames = c("Valores de Φ₁", "K", "H", "λ", "Média", "Mínimo", "Máximo")
 )
 ```
 
@@ -1856,22 +1786,24 @@ datatable(
 ```{r}
 ggplotly(
   comb_opos_monte_carlo_resumo %>%
-    group_by(`(K;H;λ;α)`) %>%
+    group_by(`(K;H;λ)`) %>%
     summarise(
       h1_phi = list(h1_phi),
       mean = list(mean),
       .groups = "drop"
     ) %>%
-    filter(map_lgl(mean, ~ .x[1] >= 0.05 & .x[1] < 0.06)) %>%
+    filter(map_lgl(mean, ~ .x[1] >= 0.05 & .x[1] < 0.052)) %>%
     unnest(cols = c(h1_phi, mean)) %>%
-    ggplot(aes(x = h1_phi, y = mean, color = `(K;H;λ;α)`)) +
+    ggplot(aes(
+      x = h1_phi, y = mean, color = `(K;H;λ)`
+    )) +
     geom_line() +
     geom_point() +
     labs(
       x = "Valores de Φ₁",
       y = "Fração de pontos fora de controle",
-      color = "Constantes (K;H;λ;α)",
-      title = "FPFC por Φ₁ e (K;H;λ;α)"
+      color = "Constantes (K;H;λ)",
+      title = "FPFC por Φ₁ e (K;H;λ) (opos)"
     ) +
     theme.base
 ) %>%
@@ -1886,13 +1818,13 @@ ggplotly(
 estatisticas_combinadas_resumo_ew_sum <- bind_rows(
   estatisticas_resumo_combinadas,
   comb_coop_monte_carlo_resumo %>%
-    filter(`(K;H;λ;α)` == "1;5;0.6;0.03") %>%
-    mutate(parametro = as.factor(`(K;H;λ;α)`)) %>%
+    filter(`(K;H;λ)` == "1.4;4;0.8") %>%
+    mutate(parametro = as.factor(`(K;H;λ)`)) %>%
     mutate(algoritmo = "EW-SUM(coop)") %>%
     select(algoritmo, parametro, h1_phi, mean),
   comb_opos_monte_carlo_resumo %>%
-    filter(`(K;H;λ;α)` == "0.6;5;0.4;0.09") %>%
-    mutate(parametro = as.factor(`(K;H;λ;α)`)) %>%
+    filter(`(K;H;λ)` == "1;4;0.1") %>%
+    mutate(parametro = as.factor(`(K;H;λ)`)) %>%
     mutate(algoritmo = "EW-SUM(opos)") %>%
     select(algoritmo, parametro, h1_phi, mean)
 )
@@ -1904,12 +1836,18 @@ estatisticas_combinadas_resumo_ew_sum <- bind_rows(
 ggplotly(
   estatisticas_combinadas_resumo_ew_sum %>%
     ggplot() +
-    geom_line(
-      aes(x = h1_phi, y = mean, color = parametro, linetype = algoritmo)
-    ) +
-    geom_point(
-      aes(x = h1_phi, y = mean, color = parametro, shape = algoritmo)
-    ) +
+    geom_line(aes(
+      x = h1_phi,
+      y = mean,
+      color = parametro,
+      linetype = algoritmo
+    )) +
+    geom_point(aes(
+      x = h1_phi,
+      y = mean,
+      color = parametro,
+      shape = algoritmo
+    )) +
     labs(
       x = "Valores de Φ₁",
       y = "Fração de pontos fora de controle",
