@@ -28,7 +28,7 @@ knit: (function(input, encoding) {
 </style>
 
 
-```{r message=FALSE, warning=FALSE, include=FALSE}
+```{r  include=FALSE}
 Sys.setenv(lang = "en_US")
 Sys.setlocale("LC_ALL", "en_US.UTF-8")
 knitr::opts_chunk$set(
@@ -38,17 +38,13 @@ knitr::opts_chunk$set(
   out.extra = "keepaspectratio=true",
   fig.align = "center"
 )
-
 ```
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 library(ggplot2)
 library(plotly) # interactive plots
-library(forecast) # plot ts objects
 library(knitr)
-library(grid) # textGrob
 library(gridExtra) # grid.arrange
-library(latex2exp) # latex expressions
 library(tidyr)
 library(dplyr)
 library(purrr)
@@ -57,7 +53,7 @@ library(qcc)
 library(BTSR)
 ```
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 # Temas para os gráficos
 
 theme.base <- theme_minimal(base_size = 11) +
@@ -85,16 +81,18 @@ theme.no_legend <- theme(legend.position = "none")
 plotly.base <- function(p) {
   p %>%
     layout(margin = list(b = 60, t = 80)) %>%
-    config(mathjax = 'cdn')
+    config(mathjax = "cdn")
 }
 
 my.plotly <- function(p) {
-  if (knitr::is_latex_output()) return(p)
-  ggplotly(p) %>% plotly.base
+  if (knitr::is_latex_output()) {
+    return(p)
+  }
+  ggplotly(p) %>% plotly.base()
 }
 ```
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 # Função para salvar e carregar resultados
 cache_dados <- function(chave, funcao_geradora) {
   c <- paste("cache", chave, sep = "/")
@@ -140,7 +138,7 @@ $$
 
 &nbsp;
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r}
 # densidade de beta para diferentes valores de p e q
 p <- c(1, 2, 4, 9)
 q <- c(1, 2, 4, 9)
@@ -150,7 +148,8 @@ dados <- expand.grid(p = p, q = q, y = seq(0, 1, length.out = 100)) %>%
     densidade = dbeta(y, p, q),
     p = as.factor(paste0("p = ", p)),
     q = as.factor(paste0("q = ", q))
-  )
+  ) %>%
+  mutate(across(where(is.numeric), \(x) round(x, digits = 4)))
 
 ggplotly(
   ggplot(dados, aes(y, densidade, color = p)) +
@@ -163,25 +162,28 @@ ggplotly(
     ) +
     theme.base
 ) %>%
-  plotly.base
+  plotly.base()
 ```
 
 ## Modelos βAR(1)
 
 O βAR(1) é um modelo de séries temporais autorregressiva de ordem 1 com distribuição Beta.
 
-Este modelo foi proposto por Rocha e Cribari-Neto em:
+O modelo ARMA com distribuição Beta foi proposto por Rocha e Cribari-Neto em:
 
 - Beta autoregressive moving average models. 2009<sup>[1](#ref-1)</sup>.
 - Erratum to: Beta autoregressive moving average models. 2017<sup>[2](#ref-2)</sup>.
 
-Matematicamente, sejam a série temporal $Y_{t} = \left\{y_{1}, y_{2}, \ldots, y_{t} | y_{n} \in (0, 1)\right\}$, o conjunto $l$-dimensional de covariáveis $\mathbf{X_{t}}$, e o vetor de parâmetros $\beta = \left\{\beta_{1}, \beta_{2}, \ldots, \beta_{l}\right\}$, temos o modelo βAR(1) é definido como:
+Matematicamente falando, seja βAR(1) o modelo de séries temporais autorregressivo de ordem 1 com distribuição Beta, e sejam
+a série temporal $Y_{t} = \left\{y_{1}, y_{2}, \ldots, y_{t} | y_{n} \in (0, 1)\right\}$, o conjunto $l$-dimensional
+de covariáveis $\mathbf{X_{t}}$, e o vetor de parâmetros $\beta = \left\{\beta_{1}, \beta_{2}, \ldots, \beta_{l}\right\}$, temos o modelo βAR(1):
 
 $$
 g(\mu_t) = \alpha + \mathbf{X_t'}\beta + \phi \left(g(Y_{t-1}) - \mathbf{X_{t-1}\beta}\right)
 $$
 
-Onde $g: (0,1) \rightarrow \mathbb{R}$ é a função de ligação, $\alpha$ é o intercepto, $\phi$ é o parâmetro de autorregressão, e $\mu_t$ é a média condicional da distribuição Beta. A função de ligação mais usual é a função logit.
+Onde $g: (0,1) \rightarrow \mathbb{R}$ é a função de ligação (usualmente utiliza-se a função $\text{logit}$), $\alpha$ é o intercepto, $\phi$ é o parâmetro de autorregressão,
+e $\mu_t$ é a média condicional da distribuição Beta.
 
 ## Controle de processos
 
@@ -201,14 +203,16 @@ Para simular o processo, utilizaremos um modelo βAR(1) a partir da biblioteca B
 Com os seguintes parâmetros da Fase I:
 
 - $n_{0} = 100$ a quantidade de observações.
-- $\Phi_0 = 0.2$ o parâmetro de autorregressão.
-- $\nu = 20$ o parâmetro de precisão (20 é o valor padrão que o pacote BTSR<sup>[3](#ref-3)</sup> utiliza).
+- $\Phi_0 = 0.2$ o coeficiente de autorregressão.
+- $\alpha = 0$ o intercepto.
+- $\nu = 20$ o parâmetro de precisão/dispersão (20 é o valor padrão que o pacote BTSR<sup>[3](#ref-3)</sup> utiliza).
 
 E na Fase II:
 
-- $n_{1} = 200$ a quantidade de observações.
-- $\Phi_1 = 0.2, 0.3, \ldots, 0.6$ o parâmetro de autorregressão.
-- $\nu = 20$ o parâmetro de precisão.
+- $n_{1} = 200$.
+- $\Phi_1 = 0.2, 0.3, \ldots, 0.6$.
+- $\alpha = 0$.
+- $\nu = 20$.
 
 Sob uma perspectiva de teste de hipóteses, temos:
 
@@ -220,7 +224,7 @@ Utilizaremos, neste trabalho, um nível de significância de 0.05 para os testes
 Por fim, será utilizada a biblioteca qcc<sup>[4](#ref-4)</sup> para a análise dos Pontos Fora de Controle (PFC).
 
 
-```{r message=FALSE, warning=FALSE}
+```{r}
 #
 # Parâmetros
 #
@@ -240,6 +244,9 @@ coeficientes <- function(phi) {
   #        é obtido definindo `coefs$d = 0`
   #        e `d = FALSE` e `error.scale = 1` (escala preditiva)
   #
+  # d: parâmetro de longa dependência (long memory), quando
+  #    diferente de zero, produz um modelo ARFIMA.
+  #
   # ν (nu): parâmetro de precisão, quanto maior o seu valor,
   #         menor a variância condicional (para μ_t fixo).
   #         O pacote BTSR define como padrão ν = 20.
@@ -247,8 +254,7 @@ coeficientes <- function(phi) {
     alpha = 0,
     nu = 20,
     phi = phi,
-    d = 0,
-    nu = 20
+    d = 0
   )
 }
 
@@ -273,9 +279,8 @@ barma.phi_estimado <- function(yt,
   BARFIMA.fit(
     yt = yt,
     start = list(alpha = alpha, nu = nu, phi = phi),
-    p = 1,
-    # Odem do polinômio AR
-    d = FALSE,
+    p = 1, # Ordem do polinômio AR
+    d = 0,
     error.scale = 1,
     report = F
   )$coefficients["phi"][[1]]
@@ -290,7 +295,6 @@ barma.residuos <- function(yt, phi_estimado) {
     error.scale = 1
   )$error
 }
-
 ```
 
 
@@ -299,7 +303,7 @@ barma.residuos <- function(yt, phi_estimado) {
 Para avaliar o desempenho do teste de hipóteses, realizaremos um experimento de Monte Carlo.
 
 
-```{r message=FALSE, warning=FALSE}
+```{r}
 # Função auxiliar para gerar os dados
 # Exemplo 1:
 # ```r
@@ -393,7 +397,7 @@ Verificando a nossa implementação, percebemos que a variância da estimativa d
 
 Com isso podemos concluir que a nossa implementação está correta.
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r}
 teste_montecarlo <- cache_dados(
   "teste-montecarlo",
   function() {
@@ -408,12 +412,14 @@ teste_montecarlo <- cache_dados(
         # Calcula a diferença entre os valores de phi
         # `phi_parametro`: valor de phi definido para a amostra de controle
         # `f1_phi`: valor de phi estimado para a amostra de controle. Espera-se que seja igual a `phi_parametro`
-        diferenca = f1_phi - phi_parametro)
-  })
+        diferenca = f1_phi - phi_parametro
+      )
+  }
+)
 ```
 
 
-```{r message=FALSE, warning=FALSE, include=FALSE}
+```{r  include=FALSE}
 datatable(
   teste_montecarlo %>%
     group_by(n1) %>%
@@ -432,23 +438,13 @@ datatable(
 ```
 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 ggplotly(
   teste_montecarlo %>%
     ggplot(aes(x = factor(n1), y = diferenca)) +
     geom_boxplot() +
-    geom_hline(
-      yintercept = 0,
-      color = "red",
-      linetype = "dashed"
-    ) +
-    annotate(
-      geom = "text",
-      x = 0.55,
-      y = 0 + 0.02,
-      label = "0.0",
-      color = "red"
-    ) +
+    geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+    annotate(geom = "text", x = 0.55, y = 0 + 0.02, label = "0.0", color = "red") +
     labs(
       x = "Número de execuções",
       y = "Diferença entre Φ e Φ₁",
@@ -456,7 +452,7 @@ ggplotly(
     ) +
     theme.base
 ) %>%
-  plotly.base
+  plotly.base()
 ```
 
 
@@ -560,7 +556,7 @@ ewma_monte_carlo$lambda <- as.factor(ewma_monte_carlo$lambda)
 
 Resumo da fração de pontos fora de controle (FPFC) para diferentes valores de $\lambda$ e $\Phi_2$.
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 ewma_monte_carlo_resumo <- ewma_monte_carlo %>%
   group_by(lambda, f2_phi) %>%
   summarise(
@@ -570,12 +566,11 @@ ewma_monte_carlo_resumo <- ewma_monte_carlo %>%
     .groups = "drop"
   )
 
-
-melhor_lambda = ewma_monte_carlo %>%
+melhor_lambda <- ewma_monte_carlo %>%
   filter(lambda == 0.8) %>%
   mutate(algoritmo = "EWMA")
 
-melhor_lambda_resumo = ewma_monte_carlo_resumo %>%
+melhor_lambda_resumo <- ewma_monte_carlo_resumo %>%
   filter(lambda == 0.8) %>%
   mutate(algoritmo = "EWMA")
 
@@ -588,21 +583,21 @@ datatable(
 ```
 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
+dados_resumo_ <- ewma_monte_carlo_resumo %>%
+  filter(lambda %in% c(0.7, 0.8))
+dados_ <- ewma_monte_carlo %>%
+  filter(lambda %in% c(0.7, 0.8))
+
 subplot(
   ggplotly(
-    ewma_monte_carlo_resumo %>%
-      filter(lambda %in% c(0.7, 0.8)) %>%
-      ggplot(aes(
-        x = f2_phi, y = mean, color = lambda
-      )) +
+    dados_resumo_ %>%
+      ggplot(aes(x = f2_phi, y = mean, color = lambda)) +
       geom_line() +
       geom_point() +
-      geom_vline(
-        xintercept = 0.2,
-        linetype = "dotted",
-        color = "gray70"
-      ) +
+      geom_vline(xintercept = 0.2, linetype = "dotted", color = "gray70") +
+      geom_hline(yintercept = 0.05, color = "gray70", linetype = "dashed") +
+      annotate(geom = "text", x = 0.55, y = 0.05 + 0.002, label = "0.05", color = "gray70") +
       labs(
         x = "Valores de Φ₂",
         y = "Fração de pontos fora de controle",
@@ -611,7 +606,7 @@ subplot(
       ) +
       theme.base
   ) %>%
-    plotly.base %>%
+    plotly.base() %>%
     layout(annotations = list(
       x = 0.2,
       y = 0.1,
@@ -619,13 +614,8 @@ subplot(
       textangle = -90
     )),
   ggplotly(
-    ewma_monte_carlo %>%
-      filter(lambda %in% c(0.7, 0.8)) %>%
-      ggplot(aes(
-        x = factor(f2_phi),
-        y = fracao_fora_de_controle,
-        fill = lambda
-      )) +
+    dados_ %>%
+      ggplot(aes(x = factor(f2_phi), y = fracao_fora_de_controle, fill = lambda)) +
       geom_boxplot() +
       labs(
         x = "Valores de Φ₂",
@@ -635,8 +625,8 @@ subplot(
       ) +
       theme.base
   ) %>%
-    plotly.base %>%
-    layout(boxmode = 'group'),
+    plotly.base() %>%
+    layout(boxmode = "group"),
   nrows = 1,
   margin = 0.06
 )
@@ -646,7 +636,7 @@ subplot(
 
 Vamos analisar o EWMA para $\lambda = 0.8$. Aqui, vamos considerar apenas a primeira execução.
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 ggplotly(
   ewma_monte_carlo %>%
     filter(k == 1 & lambda == 0.8) %>% # Apenas a primeira execução
@@ -673,13 +663,12 @@ ggplotly(
         "Fora de controle" = adjustcolor("#f42f2f", alpha.f = 0.8)
       )
     ) +
-    labs(title = "EWMA para resíduos βAR(1), com λ = 0.8",) +
+    labs(title = "EWMA para resíduos βAR(1), com λ = 0.8", ) +
     theme.base +
     theme(legend.position = "bottom", legend.title = element_blank()) +
     facet_wrap(vars(`Φ₂`), ncol = 2, labeller = "label_both")
 ) %>%
-  plotly.base
-
+  plotly.base()
 ```
 
 
@@ -791,7 +780,7 @@ ewmar_lambda_otimo <- cache_dados("ewmaar-lambda-otimo", \() {
 ```
 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 datatable(
   ewmar_lambda_otimo %>%
     group_by() %>%
@@ -856,7 +845,7 @@ Vamos analisar o EWMA-AR para $\lambda = 0.07$. O resultado encontrado anteriorm
 
 Vamos, além disso, comparar com o EWMA realizado a partir dos resíduos do modelo βAR(1).
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 subplot(
   ggplotly(
     bind_rows(
@@ -868,11 +857,9 @@ subplot(
       ggplot(aes(x = f2_phi, y = mean, color = lambda, linetype = algoritmo)) +
       geom_line() +
       geom_point() +
-      geom_vline(
-        xintercept = 0.2,
-        linetype = "dotted",
-        color = "gray70"
-      ) +
+      geom_vline(xintercept = 0.2, linetype = "dotted", color = "gray70") +
+      geom_hline(yintercept = 0.05, color = "gray70", linetype = "dashed") +
+      annotate(geom = "text", x = 0.55, y = 0.05 + 0.002, label = "0.05", color = "gray70") +
       labs(
         x = "Valores de Φ₂",
         y = "Fração de pontos fora de controle",
@@ -881,7 +868,7 @@ subplot(
       ) +
       theme.base
   ) %>%
-    plotly.base %>%
+    plotly.base() %>%
     layout(annotations = list(
       x = 0.2,
       y = 0.1,
@@ -905,14 +892,14 @@ subplot(
       ) +
       theme.base
   ) %>%
-    plotly.base %>%
-    layout(boxmode = 'group'),
+    plotly.base() %>%
+    layout(boxmode = "group"),
   nrows = 1,
   margin = 0.06
 )
 ```
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 ggplotly(
   ewmaar_monte_carlo %>%
     filter(k == 1 & lambda == 0.07) %>% # Apenas a primeira execução
@@ -947,12 +934,12 @@ ggplotly(
         "Fora de controle" = adjustcolor("#f42f2f", alpha.f = 0.6)
       )
     ) +
-    labs(title = "EWMA-AR com λ = 0.07",) +
+    labs(title = "EWMA-AR com λ = 0.07", ) +
     theme.base +
     theme(legend.position = "bottom", legend.title = element_blank()) +
     facet_wrap(vars(`Φ₂`), ncol = 2, labeller = "label_both")
 ) %>%
-  plotly.base
+  plotly.base()
 ```
 
 ## CUSUM
@@ -1064,7 +1051,7 @@ comb_cusum$parametro <- as.factor(paste0(comb_cusum$desvio_detectavel, ";", comb
 Resumo da fração de pontos fora de controle (FPFC) para diferentes valores de $K$ e $H$.
 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 comb_cusum_resumo <- comb_cusum %>%
   group_by(desvio_detectavel, intervalo_de_decisao, f2_phi) %>%
   summarise(
@@ -1093,28 +1080,19 @@ datatable(
 )
 ```
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 subplot(
   ggplotly(
     comb_cusum_resumo %>%
       filter(
         paste0(desvio_detectavel, ";", intervalo_de_decisao) %in% c("0.8;5", "1;4", "1.2;3")
       ) %>%
-      ggplot(
-        aes(
-          x = f2_phi,
-          y = mean,
-          color = desvio_detectavel,
-          linetype = intervalo_de_decisao
-        )
-      ) +
+      ggplot(aes(x = f2_phi, y = mean, color = desvio_detectavel, linetype = intervalo_de_decisao)) +
       geom_line() +
       geom_point() +
-      geom_vline(
-        xintercept = 0.2,
-        linetype = "dotted",
-        color = "gray70"
-      ) +
+      geom_vline(xintercept = 0.2, linetype = "dotted", color = "gray70") +
+      geom_hline(yintercept = 0.05, color = "gray70", linetype = "dashed") +
+      annotate(geom = "text", x = 0.55, y = 0.05 + 0.002, label = "0.05", color = "gray70") +
       labs(
         x = "Valores de Φ₂",
         y = "Fração de pontos fora de controle",
@@ -1124,7 +1102,7 @@ subplot(
       ) +
       theme.base
   ) %>%
-    plotly.base %>%
+    plotly.base() %>%
     layout(annotations = list(
       x = 0.2,
       y = 0.1,
@@ -1148,8 +1126,8 @@ subplot(
       ) +
       theme.base
   ) %>%
-    plotly.base %>%
-    layout(boxmode = 'group'),
+    plotly.base() %>%
+    layout(boxmode = "group"),
   nrows = 1,
   margin = 0.06
 )
@@ -1159,7 +1137,7 @@ subplot(
 #### Cartas para `K = 1` e `H = 4`
 
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 cusum_otimo <- comb_cusum %>%
   filter(k == 1 & parametro == "1;4") %>%
   rename(`Φ₂` = f2_phi) %>%
@@ -1196,12 +1174,12 @@ ggplotly(
         "Limite de decisão" = adjustcolor("red", alpha.f = 0.5)
       )
     ) +
-    labs(title = "CUSUM para resíduos βAR(1)",) +
+    labs(title = "CUSUM para resíduos βAR(1)", ) +
     theme.base +
     theme(legend.position = "bottom", legend.title = element_blank()) +
     facet_wrap(vars(`Φ₂`), ncol = 2, labeller = "label_both")
 ) %>%
-  plotly.base
+  plotly.base()
 ```
 
 
@@ -1209,21 +1187,31 @@ ggplotly(
 
 Vamos comparar os melhores valores de $\lambda$ e $K/H$ para o EWMA e CUSUM, respectivamente.
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
+dados_resumo_ <- bind_rows(
+  comb_cusum_resumo %>%
+    filter(paste0(desvio_detectavel, ";", intervalo_de_decisao) == "1.2;3") %>%
+    mutate(
+      algoritmo = "CUSUM",
+      parametro = factor(paste0(desvio_detectavel, ";", intervalo_de_decisao))
+    ),
+  melhor_lambda_resumo %>%
+    mutate(
+      parametro = factor(lambda)
+    )
+)
+
+dados_ <- bind_rows(
+  comb_cusum %>%
+    filter(parametro == factor("1.2;3")) %>%
+    mutate(algoritmo = "CUSUM"),
+  melhor_lambda %>%
+    mutate(parametro = factor(lambda))
+)
+
 subplot(
   ggplotly(
-      bind_rows(
-        comb_cusum_resumo %>%
-          filter(paste0(desvio_detectavel, ";", intervalo_de_decisao) == "1.2;3") %>%
-            mutate(
-              algoritmo = "CUSUM",
-              parametro = factor(paste0(desvio_detectavel, ";", intervalo_de_decisao))
-            ),
-        melhor_lambda_resumo %>%
-          mutate(
-            parametro = factor(lambda)
-          )
-      ) %>%
+    dados_resumo_ %>%
       ggplot(
         aes(
           x = f2_phi,
@@ -1234,11 +1222,9 @@ subplot(
       ) +
       geom_line() +
       geom_point() +
-      geom_vline(
-        xintercept = 0.2,
-        linetype = "dotted",
-        color = "gray70"
-      ) +
+      geom_vline(xintercept = 0.2, linetype = "dotted", color = "gray70") +
+      geom_hline(yintercept = 0.05, color = "gray70", linetype = "dashed") +
+      annotate(geom = "text", x = 0.55, y = 0.05 + 0.002, label = "0.05", color = "gray70") +
       labs(
         x = "Valores de Φ₂",
         y = "Fração de pontos fora de controle",
@@ -1248,7 +1234,7 @@ subplot(
       ) +
       theme.base
   ) %>%
-    plotly.base %>%
+    plotly.base() %>%
     layout(annotations = list(
       x = 0.2,
       y = 0.1,
@@ -1256,13 +1242,7 @@ subplot(
       textangle = -90
     )),
   ggplotly(
-    bind_rows(
-      comb_cusum %>%
-        filter(parametro == factor("1.2;3")) %>%
-        mutate(algoritmo = "CUSUM"),
-      melhor_lambda %>%
-        mutate(parametro = factor(lambda))
-    ) %>%
+    dados_ %>%
       ggplot(aes(
         x = factor(f2_phi),
         y = fracao_fora_de_controle,
@@ -1278,8 +1258,8 @@ subplot(
       ) +
       theme.base
   ) %>%
-    plotly.base %>%
-    layout(boxmode = 'group'),
+    plotly.base() %>%
+    layout(boxmode = "group"),
   nrows = 1,
   margin = 0.06
 )
