@@ -25,6 +25,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.4.0'
+
       # NOTE 1: If Publishing to GitHub Pages, set the permissions correctly (see top of this yaml)
       # NOTE 2: `gh-pages` branch must be created before running this action
       - name: Publish to GitHub Pages (and render)

@@ -8,16 +8,25 @@ knitr::opts_chunk$set(
   collapse = TRUE
 )
 
-library(ggplot2)
-library(plotly) # interactive plots
-library(knitr)
-library(gridExtra) # grid.arrange
-library(tidyr)
-library(dplyr)
-library(purrr)
-library(DT) # better html tables
-library(qcc)
-library(BTSR)
+required_packages <- c(
+  "ggplot2",
+  "plotly", # interactive plots
+  "knitr",
+  "gridExtra", # grid.arrange
+  "tidyr",
+  "dplyr",
+  "purrr",
+  "DT", # better html tables
+  "qcc",
+  "BTSR"
+)
+
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+    library(pkg, character.only = TRUE)
+  }
+}
 
 # Temas para os gráficos
 
