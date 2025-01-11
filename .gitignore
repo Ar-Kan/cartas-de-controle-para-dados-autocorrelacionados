@@ -5,7 +5,6 @@
 lib
 *.RData
 *.nb.html
-*.rds
 !.gitkeep
 !.github
 /.quarto/
