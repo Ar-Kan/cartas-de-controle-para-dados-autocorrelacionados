@@ -1,5 +1,0 @@
-## Introdução {.unnumbered}
-
-O presente trabalho visa aplicar métodos de controle estatístico de processos em séries temporais para detectar mudanças.
-
-Com o foco em séries temporais autorregressivas de ordem 1 com distribuição Beta, denominadas βAR(1), o objetivo é detectar mudanças em um processo simulado.
