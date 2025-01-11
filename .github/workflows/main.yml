@@ -32,6 +32,14 @@ jobs:
 
       - name: Install system dependencies for some R packages
         run: |
+          sudo apt install libcurl4-openssl-dev
+
+      - name: Install DevTools
+        run: |
+          Rscript -e "install.packages('devtools')"
+
+      - name: Install RMardown
+        run: |
           Rscript -e "install.packages('rmarkdown')"
 
       # NOTE 1: If Publishing to GitHub Pages, set the permissions correctly (see top of this yaml)
