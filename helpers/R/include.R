@@ -1,13 +1,3 @@
-Sys.setenv(lang = "en_US")
-Sys.setlocale("LC_ALL", "en_US.UTF-8")
-knitr::opts_chunk$set(
-  warning = FALSE,
-  message = FALSE,
-  out.extra = "keepaspectratio=true",
-  fig.align = "center",
-  collapse = TRUE
-)
-
 required_packages <- c(
   "ggplot2",
   "plotly", # interactive plots
@@ -19,7 +9,8 @@ required_packages <- c(
   "DT", # better html tables
   "qcc",
   "BTSR",
-  "rmarkdown"
+  "rmarkdown",
+  "knitr"
 )
 
 for (pkg in required_packages) {
@@ -28,6 +19,16 @@ for (pkg in required_packages) {
     library(pkg, character.only = TRUE)
   }
 }
+
+Sys.setenv(lang = "en_US")
+Sys.setlocale("LC_ALL", "en_US.UTF-8")
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE,
+  out.extra = "keepaspectratio=true",
+  fig.align = "center",
+  collapse = TRUE
+)
 
 # Temas para os gráficos
 
