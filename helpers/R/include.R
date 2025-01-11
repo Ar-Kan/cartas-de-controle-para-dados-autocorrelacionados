@@ -18,7 +18,8 @@ required_packages <- c(
   "purrr",
   "DT", # better html tables
   "qcc",
-  "BTSR"
+  "BTSR",
+  "rmarkdown"
 )
 
 for (pkg in required_packages) {
