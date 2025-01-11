@@ -7,3 +7,6 @@ lib
 *.nb.html
 *.rds
 !.gitkeep
+!.github
+/.quarto/
+*_files/

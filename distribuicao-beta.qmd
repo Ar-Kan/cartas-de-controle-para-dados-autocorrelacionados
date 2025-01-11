@@ -1,0 +1,197 @@
+## Distribuição Beta
+
+```{r  include=FALSE}
+source("helpers/R/include.R")
+source("helpers/R/barma.R")
+source("helpers/R/monte_carlo.R")
+```
+
+
+A distribuição Beta é uma distribuição de probabilidade contínua definida no intervalo $(0, 1)$, com dois parâmetros $p$ e $q$, e função densidade de probabilidade dada por:
+
+
+$$
+\pi(y | p, q) = \frac{\Gamma(p + q)}{\Gamma(p)\Gamma(q)} y^{p - 1} (1 - y)^{q - 1}, \quad 0 < y < 1
+$$
+
+onde $\Gamma(\cdot)$ é a função gama e $p, q > 0$.
+
+Essa distribuição é bastante flexível para modelar proporções, taxas e probabilidades.
+
+Sua média e variância são dadas por:
+
+$$
+E(y) = \frac{p}{p + q} \quad \text{e} \quad \text{Var}(y) = \frac{pq}{(p + q)^2(p + q + 1)}
+$$
+
+&nbsp;
+
+```{r}
+# densidade de beta para diferentes valores de p e q
+p <- c(1, 2, 4, 9)
+q <- c(1, 2, 4, 9)
+
+dados <- expand.grid(p = p, q = q, y = seq(0, 1, length.out = 100)) %>%
+  mutate(
+    densidade = dbeta(y, p, q),
+    p = as.factor(paste0("p = ", p)),
+    q = as.factor(paste0("q = ", q))
+  ) %>%
+  mutate(across(where(is.numeric), \(x) round(x, digits = 4)))
+
+ggplotly(
+  ggplot(dados, aes(y, densidade, color = p)) +
+    geom_line() +
+    facet_wrap(~q, scales = "free_y") +
+    labs(
+      title = "Densidade da distribuição Beta para diferentes valores de p e q",
+      x = "y",
+      y = "Densidade"
+    ) +
+    theme.base
+) %>%
+  plotly.base()
+```
+
+## Modelos βAR(1)
+
+O βAR(1) é um modelo de séries temporais autorregressiva de ordem 1 com distribuição Beta.
+
+O modelo ARMA com distribuição Beta foi proposto por Rocha e Cribari-Neto em:
+
+- Beta autoregressive moving average models. 2009<sup>[1](#ref-1)</sup>.
+- Erratum to: Beta autoregressive moving average models. 2017<sup>[2](#ref-2)</sup>.
+
+Matematicamente falando, seja βAR(1) o modelo de séries temporais autorregressivo de ordem 1 com distribuição Beta, e sejam
+a série temporal $Y_{t} = \left\{y_{1}, y_{2}, \ldots, y_{t} | y_{n} \in (0, 1)\right\}$, o conjunto $l$-dimensional
+de covariáveis $\mathbf{X_{t}}$, e o vetor de parâmetros $\beta = \left\{\beta_{1}, \beta_{2}, \ldots, \beta_{l}\right\}$, temos o modelo βAR(1):
+
+$$
+g(\mu_t) = \alpha + \mathbf{X_t'}\beta + \phi \left(g(Y_{t-1}) - \mathbf{X_{t-1}\beta}\right)
+$$
+
+Onde $g: (0,1) \rightarrow \mathbb{R}$ é a função de ligação (usualmente utiliza-se a função $\text{logit}$), $\alpha$ é o intercepto, $\phi$ é o parâmetro de autorregressão,
+e $\mu_t$ é a média condicional da distribuição Beta.
+
+## Controle de processos
+
+Utilizaremos o princípio de que, os resíduos de uma série temporal, como a βAR(1),
+quando modelada corretamente, são independentes e normalmente distribuídos,
+possuindo média zero e variância constante.
+
+Desta forma, quando o processo sofre uma mudança,
+espera-se que estes resíduos não sejam mais independentes
+e que sua média e variância sejam diferentes de quando o processo estava sob controle.
+Assim, podemos utilizar métodos de controle de processos para detectar essas mudanças.
+
+### Simulação
+
+Para simular o processo, utilizaremos um modelo βAR(1) a partir da biblioteca BTSR<sup>[3](#ref-3)</sup>.
+
+Com os seguintes parâmetros da Fase I:
+
+- $n_{0} = 100$ a quantidade de observações.
+- $\Phi_0 = 0.2$ o coeficiente de autorregressão.
+- $\alpha = 0$ o intercepto.
+- $\nu = 20$ o parâmetro de precisão/dispersão (20 é o valor padrão que o pacote BTSR<sup>[3](#ref-3)</sup> utiliza).
+
+E na Fase II:
+
+- $n_{1} = 200$.
+- $\Phi_1 = 0.2, 0.3, \ldots, 0.6$.
+- $\alpha = 0$.
+- $\nu = 20$.
+
+Sob uma perspectiva de teste de hipóteses, temos:
+
+- $H_0$: o processo está sob controle.
+- $H_1$: o processo sofreu uma mudança.
+
+Utilizaremos, neste trabalho, um nível de significância de 0.05 para os testes de hipóteses, o que nos dá um quantil de 1.96 para a distribuição normal padrão.
+
+Por fim, será utilizada a biblioteca qcc<sup>[4](#ref-4)</sup> para a análise dos Pontos Fora de Controle (PFC).
+
+
+### Monte Carlo
+
+Para avaliar o desempenho do teste de hipóteses, realizaremos um experimento de Monte Carlo.
+
+
+#### Validação
+
+
+Verificando a nossa implementação, percebemos que a variância da estimativa de $\phi$ diminui conforme o tamanho da amostra aumenta, o que é esperado.
+
+Com isso podemos concluir que a nossa implementação está correta.
+
+```{r}
+teste_montecarlo <- cache_dados(
+  "teste-montecarlo",
+  function() {
+    gerador_monte_carlo(
+      parametros = list(n1 = c(
+        rep(25, 20), rep(50, 20), rep(100, 20), rep(200, 20)
+      )),
+      numero_de_execucoes = 1
+    ) %>%
+      select(n1, f1_phi, f2_phi) %>%
+      mutate(
+        # Calcula a diferença entre os valores de phi
+        # `phi_parametro`: valor de phi definido para a amostra de controle
+        # `f1_phi`: valor de phi estimado para a amostra de controle. Espera-se que seja igual a `phi_parametro`
+        diferenca = f1_phi - phi_parametro
+      )
+  }
+)
+```
+
+
+```{r  include=FALSE}
+datatable(
+  teste_montecarlo %>%
+    group_by(n1) %>%
+    summarise(
+      simulações = n(),
+      mean = mean(diferenca),
+      var = var(diferenca),
+      min = min(diferenca),
+      max = max(diferenca),
+      .groups = "drop"
+    ) %>%
+    mutate(across(where(is.numeric), \(x) round(x, digits = 3))),
+  caption = "Resumo da diferença entre Φ e Φ₁",
+  colnames = c("Número de observações", "Simulações", "Média", "Variância", "Mínimo", "Máximo")
+)
+```
+
+
+```{r echo=FALSE}
+ggplotly(
+  teste_montecarlo %>%
+    ggplot(aes(x = factor(n1), y = diferenca)) +
+    geom_boxplot() +
+    geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+    annotate(geom = "text", x = 0.55, y = 0 + 0.02, label = "0.0", color = "red") +
+    labs(
+      x = "Número de execuções",
+      y = "Diferença entre Φ e Φ₁",
+      title = paste0("Diferença entre Φ e Φ₁")
+    ) +
+    theme.base
+) %>%
+  plotly.base()
+```
+
+
+## Referências
+
+<a name="ref-1">1</a>. ROCHA, A. V., CRIBARI-NETO, F. Beta autoregressive moving average models. TEST 18, 529–545 (2009). DOI: [10.1007/s11749-008-0112-z](https://doi.org/10.1007/s11749-008-0112-z)
+
+<a name="ref-2">2</a>. ROCHA, A. V., CRIBARI-NETO, F. Erratum to: Beta autoregressive moving average models. TEST 26, 451–459 (2017). DOI: [10.1007/s11749-017-0528-4](https://doi.org/10.1007/s11749-017-0528-4)
+
+<a name="ref-3">3</a>. PRASS, T. S., et. al. BTSR: Bounded Time Series Regression. R package version 0.1.5. 2023-09-22. DOI: [10.32614/CRAN.package.BTSR](https://doi.org/10.32614/CRAN.package.BTSR)
+
+<a name="ref-4">4</a>. SCRUCCA, L., et. al. qcc: Quality Control Charts. R package version 2.7. 2017-07-09. DOI: [10.32614/CRAN.package.qcc](https://doi.org/10.32614/CRAN.package.qcc)
+
+<a name="ref-5">5</a>. MONTGOMERY, D. C. Introduction to Statistical Quality Control. 2013. John Wiley & Sons.
+

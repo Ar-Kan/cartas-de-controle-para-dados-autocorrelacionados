@@ -362,10 +362,12 @@ Vamos verificar nossa implementação do gerador de Monte Carlo.
 
 ```{r}
 teste_montecarlo <- cache_dados("teste-montecarlo", function() {
-  gerador_monte_carlo(parametros = list(nH0 = c(
-    rep(25, 20), rep(50, 20), rep(100, 20), rep(200, 20)
-  )),
-                      numero_de_execucoes = 1) %>%
+  gerador_monte_carlo(
+    parametros = list(nH0 = c(
+      rep(25, 20), rep(50, 20), rep(100, 20), rep(200, 20)
+    )),
+    numero_de_execucoes = 1
+  ) %>%
     select(nH0, h0_phi, h1_phi) %>%
     mutate( # Calcula a diferença entre os valores de phi
       # `phi_parametro`: valor de phi definido para a amostra de controle

@@ -1,0 +1,104 @@
+
+
+```{r}
+set.seed(0)
+resultados <- data.frame(seed = integer(),
+                        outlier_size = numeric(),
+                        phi_estimate = numeric(),
+                        phi_estimate_transformed = numeric())
+
+for (i in 1:1000) {
+  # Gera as amostras
+  amostras <- barma.sim(n = 100, phi = 0.5, seed = i)
+  
+  # Adiciona % de outliers
+  n_outliers <- floor(0.05 * length(amostras))
+  outlier_indices <- sample(1:length(amostras), n_outliers, replace = FALSE)
+  outlier_sizes <- rchisq(n_outliers, 1)
+  # Mantém outliers entre 0 e 1
+  
+  if (i == 1) {
+    print(amostras[outlier_indices])
+    print(outlier_sizes)
+    
+    p_ <- ggplot(data.frame(amostras), aes(x = 1:length(amostras), y = amostras)) +
+      geom_line(aes(x = 1:length(amostras), y = amostras)) +
+      labs(title = "Série Temporal sem Outliers",
+           x = "Tempo",
+           y = "Valor")
+    print(p_)
+  }
+  
+  temp_ <- amostras[outlier_indices]
+  temp_2 <- numeric(n_outliers)
+  for (j in 1:n_outliers) {
+    t <- temp_2[j]
+    o <- outlier_sizes[j]
+    if (t < 0.5) {
+      temp_2[j] <- min(t + o, 0.99)
+    } else {
+      temp_2[j] <- max(t - o, 0.01)
+    }
+  }
+  amostras[outlier_indices] <- temp_2
+  media_diferenca <- mean(temp_ - temp_2)
+  
+  
+  if (i == 1) {
+    p_ <- ggplot(data.frame(amostras), aes(x = 1:length(amostras), y = amostras)) +
+      geom_line(aes(x = 1:length(amostras), y = amostras)) +
+      labs(title = "Série Temporal com Outliers",
+           x = "Tempo",
+           y = "Valor")
+    print(p_)
+  }
+  
+  # Estima o phi
+  phi_original <- barma.phi_estimado(amostras)
+  
+  # Apply outlier mitigation: Winsorization
+  # Cap values at the 5th and 95th percentiles
+  limite_inferior <- quantile(amostras, 0.05)
+  limite_superior <- quantile(amostras, 0.95)
+  amostras_transformada <- pmin(pmax(amostras, limite_inferior), limite_superior)
+  
+  if (i == 1) {
+    p_ <- ggplot(data.frame(amostras = amostras_transformada), aes(x = 1:length(amostras), y = amostras_transformada)) +
+      geom_line(aes(x = 1:length(amostras), y = amostras)) +
+      labs(title = "Série Temporal com Outliers",
+           x = "Tempo",
+           y = "Valor")
+    print(p_)
+  }
+  
+  phi_transformed  <- barma.phi_estimado(amostras_transformada)
+  
+  resultados <- rbind(resultados, data.frame(seed = i,
+                                         outlier_size = media_diferenca,
+                                         phi_estimate = phi_original,
+                                         phi_estimate_transformed = phi_transformed ))
+}
+
+# ggplot(resultados, aes(x = outlier_size, y = phi_estimate)) +
+#   geom_point() +
+#   geom_smooth(method = "lm", color = "red") +
+#   labs(title = "Influência do Tamanho dos Outliers na Estimação de Phi",
+#        x = "Tamanho médio dos outliers",
+#        y = "Estimattiva do Phi")
+
+ggplot(resultados, aes(x = outlier_size)) +
+  geom_point(aes(y = phi_estimate), color = "blue") +
+  geom_point(aes(y = phi_estimate_transformed), color = "green") +
+  geom_smooth(aes(y = phi_estimate), method = "gam", color = "blue", se = FALSE) +
+  geom_smooth(aes(y = phi_estimate_transformed), method = "gam", color = "green", se = FALSE) +
+  labs(title = "Influência do Tamanho dos Outliers na Estimação de Phi (Original vs Transformada)",
+       x = "Tamanho médio da diferença entre originais e outliers",
+       y = "Estimattiva do Phi") +
+  scale_color_manual(values = c("Original" = "blue", "Transformada" = "green")) +
+  theme_minimal() +
+  guides(color = guide_legend("Legenda")) +
+  annotate("text", x = 0.0, y = 0.8, label = "Azul: Original \nVerde: Transformada", hjust = 0)
+
+
+```
+

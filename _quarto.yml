@@ -1,0 +1,64 @@
+project:
+  type: book
+  output-dir: .web
+
+lang: pt-BR
+strip-comments: true
+date: last-modified
+date-format: D/MM/YYYY
+
+book:
+  title: Controle de processos βAR(1)
+  date: today
+  date-format: D/MM/YYYY
+  author:
+    - name: Arquimedes Macedo
+      email: arquimedes.macedo@ufrgs.br
+      corresponding: true
+      affiliations:
+        - Instituto de Matemática e Estatística — IME/UFRGS
+  cover-image: jumbotron.jpg
+  repo-url: https://github.com/Ar-Kan/cartas-de-controle-para-dados-autocorrelacionados
+  site-url: https://ar-kan.github.io/cartas-de-controle-para-dados-autocorrelacionados/
+  repo-branch: master
+  repo-actions:
+    - issue
+  sharing:
+    - twitter
+    - facebook
+    - linkedin
+  open-graph: true
+  reader-mode: true
+  chapters:
+    - index.qmd
+    - distribuicao-beta.qmd
+    - ceq-residuos.qmd
+
+format:
+  html:
+    email-obfuscation: javascript
+    code-link: true
+    link-external-icon: false
+    link-external-newwindow: true
+    number-sections: true
+    toc: true
+    collapse: true
+    html-math-method:
+      method: mathjax
+      url: https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js
+    reference-location: margin
+    citation-location: margin
+    toc-location: right
+    toc-expand: true
+    theme:
+      light:
+        - flatly
+        - helpers/html/styles.scss
+        - helpers/html/light.scss
+      dark:
+        - darkly
+        - helpers/html/styles.scss
+        - helpers/html/dark.scss
+    fig-width: 5
+    fig-height: 5
+    fig-align: center

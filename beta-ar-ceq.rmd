@@ -995,17 +995,20 @@ cusum_qcc <- function(amostra_inicial,
   neg <- cu[["neg"]][registros]
   fora_de_controle_pos <- pos > intervalo_de_decisao
   fora_de_controle_neg <- neg < -intervalo_de_decisao
-  total_fora_de_controle <- sum(ifelse(
+  fora_de_controle <- ifelse(
     fora_de_controle_pos,
     fora_de_controle_pos,
     fora_de_controle_neg
-  ))
+  )
+  total_fora_de_controle <- sum(fora_de_controle)
   fracao_fora_de_controle <- total_fora_de_controle / length(registros)
+
   list(
     pos = pos,
     neg = neg,
     fora_de_controle_pos = fora_de_controle_pos,
     fora_de_controle_neg = fora_de_controle_neg,
+    fora_de_controle = fora_de_controle,
     total_fora_de_controle = total_fora_de_controle,
     fracao_fora_de_controle = fracao_fora_de_controle
   )
@@ -1036,6 +1039,7 @@ comb_cusum <- cache_dados("simulacao-cusum-k-h", function() {
       neg = list(qcc$neg),
       fora_de_controle_pos = list(qcc$fora_de_controle_pos),
       fora_de_controle_neg = list(qcc$fora_de_controle_neg),
+      fora_de_controle = list(qcc$fora_de_controle),
       total_fora_de_controle = qcc$total_fora_de_controle,
       fracao_fora_de_controle = qcc$fracao_fora_de_controle
     ) %>%
@@ -1165,7 +1169,7 @@ ggplotly(
       size = 1,
       shape = 4
     ) +
-    labs(x = "Observação", y = "Caracterísitca", color = "Legenda") +
+    labs(x = "Observação", y = "", color = "Legenda") +
     scale_color_manual(
       values = c(
         "N+" = adjustcolor("blue", alpha.f = 0.6),
@@ -1183,7 +1187,7 @@ ggplotly(
 ```
 
 
-## EWMA e CUSUM
+## EWMA vs. CUSUM
 
 Vamos comparar os melhores valores de $\lambda$ e $K/H$ para o EWMA e CUSUM, respectivamente.
 
@@ -1193,20 +1197,23 @@ dados_resumo_ <- bind_rows(
     filter(paste0(desvio_detectavel, ";", intervalo_de_decisao) == "1.2;3") %>%
     mutate(
       algoritmo = "CUSUM",
-      parametro = factor(paste0(desvio_detectavel, ";", intervalo_de_decisao))
+      parametro = factor(paste0("K=", desvio_detectavel, ";H=", intervalo_de_decisao))
     ),
   melhor_lambda_resumo %>%
     mutate(
-      parametro = factor(lambda)
+      parametro = factor(paste0("λ=", lambda))
     )
 )
 
 dados_ <- bind_rows(
   comb_cusum %>%
     filter(parametro == factor("1.2;3")) %>%
-    mutate(algoritmo = "CUSUM"),
+    mutate(
+      algoritmo = "CUSUM",
+      parametro = factor(paste0("K=", desvio_detectavel, ";H=", intervalo_de_decisao))
+    ),
   melhor_lambda %>%
-    mutate(parametro = factor(lambda))
+    mutate(parametro = factor(paste0("λ=", lambda)))
 )
 
 subplot(
@@ -1267,6 +1274,55 @@ subplot(
 
 > Observa-se que o CUSUM possui mais poder de detecção que o EWMA, mas, em compensação, possui uma variabilidade maior.
 
+### ARL
+
+O ARL (Average Run Length -- Comprimento Médio de Execução) é uma medida de desempenho de um método de controle de processo.
+É definido como o número médio de observações necessárias para detectar uma mudança no processo. E pode ser calculado como
+
+$$
+\text{ARL} = \frac{1}{\text{FPR}}
+$$
+
+onde FPR é a taxa de falsos positivos, ou seja, a fração de vezes que o método detecta uma mudança no processo quando não há.
+Ou seja, é a taxa de pontos fora de controle quando o processo está sob controle.
+
+Vamos ver como o ARL se comporta para os melhores valores de $\lambda$ e $K/H$ encontrados.
+
+
+```{r}
+arl <- function(fpr) {
+  return(1 / fpr)
+}
+
+arl <- dados_resumo_ %>%
+  filter(f2_phi == 0.2) %>%
+  group_by(parametro, algoritmo) %>%
+  summarise(
+    mean = mean(mean),
+    min = min(min),
+    max = max(max),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    arl = ceiling(1 / mean)
+  )
+
+datatable(
+  arl %>%
+    mutate(across(where(is.numeric), \(x) round(x, digits = 4))),
+  caption = "ARL",
+  colnames = c(
+    "Parâmetro",
+    "Algoritmo",
+    "Média",
+    "Mínimo",
+    "Máximo",
+    "ARL"
+  )
+)
+```
+
+
 
 ## Referências
 
@@ -1280,6 +1336,3 @@ subplot(
 
 <a name="ref-5">5</a>. MONTGOMERY, D. C. Introduction to Statistical Quality Control. 2013. John Wiley & Sons.
 
-&nbsp;
-&nbsp;
-&nbsp;

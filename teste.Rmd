@@ -1,0 +1,153 @@
+```{r}
+
+```
+
+
+
+
+
+
+```{r}
+comb_comb <-   gerador_monte_carlo(
+  parametros = expand.grid(
+    desvio_detectavel = c(0.6, 0.8, 1.2, 1.4, 1.6),
+    intervalo_de_decisao = c(3, 4, 5, 6),
+    lambda = c(0.6, 0.8, 0.9, 1)
+    # lambda = seq(0.1, 0.1, by = 0.1)
+  ),
+  numero_de_execucoes = 40,
+  novos_phis = c(0.2, 0.3, 0.4)
+  # novos_phis = c(0.2, 0.2)
+) %>%
+  mutate(
+    "(K;H;λ)" = factor(
+      paste(desvio_detectavel, intervalo_de_decisao, lambda, sep = ";")
+    ),
+    ewma = list(ewma_qcc(h0_residuos, lambda, h1_residuos)),
+    cumsum.ewma = list(
+      cusum_qcc(
+        ewma$ewma,
+        desvio_detectavel = desvio_detectavel,
+        intervalo_de_decisao = intervalo_de_decisao
+      )
+    ),
+    fora_cumsum.ewma = cumsum.ewma$fracao_fora_de_controle
+  )
+```
+
+```{r}
+comb_cusum <- cache_dados("teste-comb-comb", \() comb_comb)
+```
+
+
+```{r}
+comb_comb_resumo <- comb_comb %>%
+  group_by(`(K;H;λ)`, h1_phi, desvio_detectavel, lambda) %>%
+  summarise(
+    mean = mean(fora_cumsum.ewma),
+    min = min(fora_cumsum.ewma),
+    max = max(fora_cumsum.ewma),
+    .groups = "drop"
+  ) %>%
+  group_by(`(K;H;λ)`) %>%
+  summarise(
+    h1_phi = list(h1_phi),
+    desvio_detectavel = list(desvio_detectavel),
+    lambda = list(lambda),
+    mean = list(mean),
+    min = list(min),
+    max = list(max),
+    .groups = "drop"
+  ) %>%
+  filter(map_lgl(mean, ~ .x[1] >= 0.05 & .x[1] < 0.06)) %>%
+  unnest(cols = c(h1_phi, desvio_detectavel, lambda, mean, min, max))
+```
+
+
+```{r}
+ggplotly(
+  comb_comb_resumo %>%
+    group_by(`(K;H;λ)`) %>%
+    summarise(
+      h1_phi = list(h1_phi),
+      mean = list(mean),
+      .groups = "drop"
+    ) %>%
+    # filter(map_lgl(mean, ~ .x[1] >= 0.05 & .x[1] < 0.06)) %>%
+    unnest(cols = c(h1_phi, mean)) %>%
+    ggplot(aes(
+      x = h1_phi, y = mean, color = `(K;H;λ)`
+    )) +
+    geom_line() +
+    geom_point() +
+    labs(
+      x = "Valores de Φ₁",
+      y = "Fração de pontos fora de controle",
+      color = "(K;H;λ)",
+      title = "FPFC por Φ₁ e (K;H;λ)"
+    ) +
+    theme.base
+) %>%
+  plotly.base
+```
+
+
+```{r}
+ggplotly(
+  comb_comb %>%
+    filter(`(K;H;λ)` %in% c("0.6;6;1", "1.4;3;0.9", "1.2;5;0.8", "1.2;4;0.9")) %>%
+    ggplot(aes(
+      x = factor(h1_phi),
+      y = fora_cumsum.ewma,
+      fill = `(K;H;λ)`,
+    )) +
+    geom_boxplot() +
+    labs(
+      x = "Valores de Φ₁",
+      y = "Fração de pontos fora de controle",
+      fill = "Valores de K",
+      title = "FPFCs por Φ₁ e K com H = 5"
+    ) +
+    theme.base
+) %>%
+  plotly.base %>%
+  layout(boxmode = 'group')
+
+```
+
+```{r}
+simulate_ar1_beta <- function(n, phi, alpha, beta, change_point = NULL, phi_new = NULL, alpha_new = NULL, beta_new = NULL, scale = 1, shift = 0) {
+  # Initialize data
+  data <- numeric(n)
+  data[1] <- shift  # Start with a shifted mean
+
+  # Generate data with possible regime change
+  for (i in 2:n) {
+    if (!is.null(change_point) && i > change_point) {
+      # Use new parameters after change point
+      noise <- rbeta(1, alpha_new, beta_new) * scale + shift
+      data[i] <- phi_new * data[i - 1] + noise
+    } else {
+      # Use initial parameters
+      noise <- rbeta(1, alpha, beta) * scale + shift
+      data[i] <- phi * data[i - 1] + noise
+    }
+  }
+
+  return(data)
+}
+
+# Example: AR(1) with Beta-like noise in the range [2, 6]
+n <- 200
+data <- simulate_ar1_beta(
+  n,
+  phi = 0.6, alpha = 2, beta = 5,
+  change_point = 100, phi_new = 0.8, alpha_new = 3, beta_new = 4,
+  scale = 4, shift = 2  # Scale Beta to range [2, 6]
+)
+
+print(data)
+
+plot(data, type = "l", main = "Simulated AR(1) Process with Beta-like Noise", ylab = "Value")
+
+```
