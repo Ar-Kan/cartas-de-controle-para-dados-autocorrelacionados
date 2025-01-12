@@ -35,6 +35,7 @@ barma.sim <- function(n,
                       phi,
                       seed = NULL,
                       y.start = NULL) {
+  # Simula uma série temporal BARMA de tamanho `n`
   BARFIMA.sim(
     n = n,
     coefs = coeficientes(phi),
@@ -42,6 +43,20 @@ barma.sim <- function(n,
     error.scale = 1,
     complete = F,
     seed = ifelse(is.null(seed), sample(1:1000, 1), seed)
+  )
+}
+
+barma.fit <- function(yt,
+                      alpha = 0,
+                      nu = 20,
+                      phi = 0.1) {
+  BARFIMA.fit(
+    yt = yt,
+    start = list(alpha = alpha, nu = nu, phi = phi),
+    p = 1, # Ordem do polinômio AR
+    d = 0,
+    error.scale = 1,
+    report = F
   )
 }
 
