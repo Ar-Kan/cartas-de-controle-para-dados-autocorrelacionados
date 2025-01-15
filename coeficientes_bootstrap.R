@@ -19,20 +19,35 @@ coeficientes <- function(alpha = 0, nu = 20, phi = 0.2) {
   )
 }
 
-amostra_inicial <- BARFIMA.sim(
-  n = 100,
-  coefs = coeficientes(),
-  error.scale = 1,
-  complete = FALSE
-)
 
-coef_inicial <- BARFIMA.fit(
+sim <- function(n, coefs, y.start = NULL) {
+  # Simula uma série temporal BAR de tamanho `n`
+  BARFIMA.sim(
+    n = n,
+    coefs = coefs,
+    y.start = y.start,
+    error.scale = 1,
+    complete = FALSE
+  )
+}
+
+fit <- function(yt, start) {
+  # Ajusta um modelo BAR
+  BARFIMA.fit(
+    yt = yt,
+    start = start,
+    p = 1, # Ordem do polinômio AR
+    d = 0,
+    error.scale = 1,
+    report = FALSE
+  )
+}
+
+amostra_inicial <- sim(n = 100, coefs = coeficientes())
+
+coef_inicial <- fit(
   yt = amostra_inicial,
-  start = list(alpha = 0.1, nu = 20, phi = 0.1),
-  p = 1, # Ordem do polinômio AR
-  d = 0,
-  error.scale = 1,
-  report = FALSE
+  start = list(alpha = 0.1, nu = 20, phi = 0.1)
 )
 coef_inicial
 alpha.est <- coef_inicial$coef["alpha"][[1]]
@@ -41,19 +56,13 @@ nu.est <- coef_inicial$coef["nu"][[1]]
 
 bootstrap <- list()
 for (i in 1:1000) {
-  amostra <- BARFIMA.sim(
+  amostra <- sim(
     n = 100,
-    coefs = coeficientes(alpha = alpha.est, nu = nu.est, phi = phi.est),
-    error.scale = 1,
-    complete = FALSE
+    coefs = coeficientes(alpha = alpha.est, nu = nu.est, phi = phi.est)
   )
-  coef <- BARFIMA.fit(
+  coef <- fit(
     yt = amostra,
-    start = list(alpha = alpha.est, nu = nu.est, phi = phi.est),
-    p = 1, # Ordem do polinômio AR
-    d = 0,
-    error.scale = 1,
-    report = FALSE
+    start = list(alpha = alpha.est, nu = nu.est, phi = phi.est)
   )
   bootstrap[[i]] <- list(
     amostra = amostra,
@@ -72,12 +81,10 @@ for (i in 1:100) {
   boot.amostra <- sample(seq_len(length(bootstrap)), 1)
   amostra <- bootstrap[[boot.amostra]]$amostra
   estimativa <- bootstrap[[boot.amostra]]$coef
-  proximas_amostras <- BARFIMA.sim(
+  proximas_amostras <- sim(
     n = i,
-    y.start = amostra[length(amostra)],
     coefs = coeficientes(alpha = estimativa$alpha, nu = estimativa$nu, phi = estimativa$phi),
-    error.scale = 1,
-    complete = FALSE
+    y.start = amostra[length(amostra)]
   )
   if (i == 100) {
     novo_dataset <- proximas_amostras
@@ -88,17 +95,13 @@ for (i in 1:100) {
     )
   }
 
-  coef <- BARFIMA.fit(
+  coef <- fit(
     yt = novo_dataset,
-    start = list(alpha = alpha.est, nu = nu.est, phi = phi.est),
-    p = 1, # Ordem do polinômio AR
-    d = 0,
-    error.scale = 1,
-    report = FALSE
+    start = list(alpha = alpha.est, nu = nu.est, phi = phi.est)
   )
   coeficientes_estimados[[i]] <- list(
     boot.amostra = boot.amostra,
-    boot = bootstrap[[n_amostra]],
+    boot = bootstrap[[boot.amostra]],
     amostra = novo_dataset,
     coef = list(
       alpha = coef$coef["alpha"][[1]],
@@ -117,3 +120,7 @@ df <- data.frame(
   boot.phi = sapply(coeficientes_estimados, function(x) x$boot$coef$phi),
   boot.nu = sapply(coeficientes_estimados, function(x) x$boot$coef$nu)
 )
+
+hist(df$boot.alpha)
+hist(df$boot.phi)
+hist(df$boot.nu)
