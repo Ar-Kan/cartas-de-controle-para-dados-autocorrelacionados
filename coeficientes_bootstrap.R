@@ -54,6 +54,7 @@ alpha.est <- coef_inicial$coef["alpha"][[1]]
 phi.est <- coef_inicial$coef["phi"][[1]]
 nu.est <- coef_inicial$coef["nu"][[1]]
 
+print("Bootstrap")
 bootstrap <- list()
 for (i in 1:1000) {
   amostra <- sim(
@@ -74,53 +75,109 @@ for (i in 1:1000) {
   )
 }
 
-# bootstrap
 
-coeficientes_estimados <- list()
-for (i in 1:100) {
-  boot.amostra <- sample(seq_len(length(bootstrap)), 1)
-  amostra <- bootstrap[[boot.amostra]]$amostra
-  estimativa <- bootstrap[[boot.amostra]]$coef
-  proximas_amostras <- sim(
-    n = i,
-    coefs = coeficientes(alpha = estimativa$alpha, nu = estimativa$nu, phi = estimativa$phi),
-    y.start = amostra[length(amostra)]
-  )
-  if (i == 100) {
-    novo_dataset <- proximas_amostras
-  } else {
-    novo_dataset <- c(
-      amostra[(i + 1):length(amostra)],
-      proximas_amostras
+seq_colagens <- c(1, seq(25, 75, 25), 99)
+
+bootstrap_colagem <- list()
+for (i in seq_colagens) {
+  print(paste0("Colagem com ", i))
+  amostras_coladas <- list()
+  for (j in seq(1, 1000, 2)) {
+    boot.amostra.1 <- j # sample(seq_len(length(bootstrap)), 1)
+    boot.amostra.2 <- j + 1 # sample(seq_len(length(bootstrap)), 1)
+    amostra.1 <- bootstrap[[boot.amostra.1]]$amostra
+    amostra.2 <- bootstrap[[boot.amostra.2]]$amostra
+    amostra_colada <- c(amostra.1[1:i], amostra.2[(i + 1):100])
+    coef <- fit(
+      yt = amostra_colada,
+      start = list(alpha = alpha.est, nu = nu.est, phi = phi.est)
+    )
+    
+    amostras_coladas[[j]] <- list(
+      amostra = amostra_colada,
+      coef = list(
+        alpha = coef$coef["alpha"][[1]],
+        phi = coef$coef["phi"][[1]],
+        nu = coef$coef["nu"][[1]]
+      )
     )
   }
+  bootstrap_colagem[[i]] <- amostras_coladas
+}
 
-  coef <- fit(
-    yt = novo_dataset,
-    start = list(alpha = alpha.est, nu = nu.est, phi = phi.est)
+# Quartis do bootstrap
+limite.inf <- quantile(
+  unlist(lapply(bootstrap, function(x) x$coef$phi)),
+  probs = 0.025
+)
+limite.sup <- quantile(
+  unlist(lapply(bootstrap, function(x) x$coef$phi)),
+  probs = 0.95
+)
+
+
+coeficientes_estimados <- list()
+for (i in seq_colagens) {
+  coeficientes_estimados[[i]] <- list()
+}
+
+# Monte Carlo
+print("Monte Carlo")
+for (k in 1:500) {
+  proximas_amostras_100 <- sim(
+    n = 100,
+    coefs = coeficientes(alpha = alpha.est, nu = nu.est, phi = phi.est)
   )
-  coeficientes_estimados[[i]] <- list(
-    boot.amostra = boot.amostra,
-    boot = bootstrap[[boot.amostra]],
-    amostra = novo_dataset,
-    coef = list(
-      alpha = coef$coef["alpha"][[1]],
-      phi = coef$coef["phi"][[1]],
-      nu = coef$coef["nu"][[1]]
+  for (i in seq_colagens) {
+    boot.amostra <- sample(seq_len(999), 1)
+    amostra <- bootstrap_colagem[[i]][[boot.amostra]]$amostra
+    proximas_amostras <- proximas_amostras_100[1:i]
+    if (i == 100) {
+      novo_dataset <- proximas_amostras
+    } else {
+      novo_dataset <- c(
+        amostra[(i + 1):length(amostra)],
+        proximas_amostras
+      )
+    }
+  
+    coef <- fit(
+      yt = novo_dataset,
+      start = list(alpha = alpha.est, nu = nu.est, phi = phi.est)
     )
-  )
+    # coeficientes_estimados[[i]] <- c(
+    #   coeficientes_estimados[[i]],
+    #   list(
+    #     boot.amostra = boot.amostra,
+    #     boot = bootstrap[[boot.amostra]],
+    #     amostra = novo_dataset,
+    #     coef = list(
+    #       alpha = coef$coef["alpha"][[1]],
+    #       phi = coef$coef["phi"][[1]],
+    #       nu = coef$coef["nu"][[1]]
+    #     )
+    #   )
+    # )
+    coeficientes_estimados[[i]] <- c(
+      coeficientes_estimados[[i]],
+      coef$coef["phi"][[1]]
+    )
+  }
 }
 
 df <- data.frame(
-  alpha = sapply(coeficientes_estimados, function(x) x$coef$alpha),
-  phi = sapply(coeficientes_estimados, function(x) x$coef$phi),
-  nu = sapply(coeficientes_estimados, function(x) x$coef$nu),
-  boot.amostra = sapply(coeficientes_estimados, function(x) x$boot.amostra),
-  boot.alpha = sapply(coeficientes_estimados, function(x) x$boot$coef$alpha),
-  boot.phi = sapply(coeficientes_estimados, function(x) x$boot$coef$phi),
-  boot.nu = sapply(coeficientes_estimados, function(x) x$boot$coef$nu)
+  colagem = rep(seq_colagens, each = 50),
+  phi = unlist(coeficientes_estimados)
 )
 
-hist(df$boot.alpha)
-hist(df$boot.phi)
-hist(df$boot.nu)
+library(ggplot2)
+
+ggplot(df, aes(x = colagem, y = phi, group = colagem)) +
+  geom_boxplot() +
+  geom_hline(yintercept = c(limite.inf, limite.sup), linetype = "dashed") +
+  labs(
+    title = "Estimativa de phi",
+    x = "Número de colagens",
+    y = "Estimativa de phi"
+  ) +
+  facet_wrap(~colagem, scales = "free_y")
