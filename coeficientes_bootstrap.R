@@ -1,8 +1,19 @@
 library(BTSR)
 library(ggplot2)
+library(ggformula)
 library(dplyr)
+library(data.table)
+
+BETA_ARMA <- FALSE
 
 coeficientes <- function(alpha = 0, nu = 20, phi = 0.2) {
+  if (!BETA_ARMA) {
+    # Modelo AR
+    return(
+      list(ar = c(phi))
+    )
+  }
+  
   # βARMA: o modelo de Rocha e Cribari-Neto (2009, 2017)
   #        é obtido definindo `coefs$d = 0`
   #        e `d = FALSE` e `error.scale = 1` (escala preditiva)
@@ -23,6 +34,16 @@ coeficientes <- function(alpha = 0, nu = 20, phi = 0.2) {
 
 
 sim <- function(n, coefs, y.start = NULL) {
+  if (!BETA_ARMA) {
+    # Simula uma série temporal AR de tamanho `n`
+    return(
+      arima.sim(
+        n = n,
+        model = coefs
+      )
+    )
+  }
+  
   # Simula uma série temporal BAR de tamanho `n`
   BARFIMA.sim(
     n = n,
@@ -34,6 +55,17 @@ sim <- function(n, coefs, y.start = NULL) {
 }
 
 fit <- function(yt, start) {
+  if (!BETA_ARMA) {
+    # Ajusta um modelo AR
+    return(
+      arima(
+        yt,
+        order = c(1, 0, 0),
+        include.mean = FALSE,
+      )
+    )
+  }
+  
   # Ajusta um modelo BAR
   BARFIMA.fit(
     yt = yt,
@@ -45,108 +77,139 @@ fit <- function(yt, start) {
   )
 }
 
-seq_colagens <- c(1, 10, 25, 40, 50, 75, 99)
+seq_colagens <- c(1, 24, 49, 75, 99)
+phis <- c(-0.1, 0.1, 0.2, 0.3)
+tamanho_amostras_iniciais <- c(25, 50, 100, 200)
 
-coeficientes_estimados <- list()
-controle <- list()
-for (i in seq_colagens) {
-  coeficientes_estimados[[i]] <- list()
-  controle[[i]] <- list()
-}
+df <- data.table(
+  tamanho_inicial = numeric(),
+  tamanho_colagem = numeric(),
+  # Phi estimado para cada tamanho de colagem
+  phi_estimado = numeric(),
+  novo_phi = numeric(),
+  # SEQ dos phis para cada tamanho de colagem
+  controle = logical()
+)
 
 TAMANHO <- 500
 for (k in 1:TAMANHO) {
-  amostra_inicial <- sim(n = 100, coefs = coeficientes())
-  
-  coef_inicial <- fit(
-    yt = amostra_inicial,
-    start = list(alpha = 0.1, nu = 20, phi = 0.1)
-  )
-  coef_inicial
-  alpha.est <- coef_inicial$coef["alpha"][[1]]
-  phi.est <- coef_inicial$coef["phi"][[1]]
-  nu.est <- coef_inicial$coef["nu"][[1]]
-  
-  print(paste0("Bootstrap (", k, ") - phi: ", phi.est))
-  bootstrap <- list()
-  for (i in 1:1000) {
-    amostra <- sim(
-      n = 100,
-      coefs = coeficientes(alpha = alpha.est, nu = nu.est, phi = phi.est)
+  for (n_inicial in tamanho_amostras_iniciais) {
+    amostra_inicial <- sim(n = n_inicial, coefs = coeficientes())
+    
+    coef_inicial <- fit(
+      yt = amostra_inicial,
+      start = list(alpha = 0.1, nu = 20, phi = 0.1)
     )
-    coef <- fit(
-      yt = amostra,
-      start = list(alpha = alpha.est, nu = nu.est, phi = phi.est)
-    )
-    bootstrap[[i]] <- list(
-      amostra = amostra,
-      coef = list(
-        alpha = coef$coef["alpha"][[1]],
-        phi = coef$coef["phi"][[1]],
-        nu = coef$coef["nu"][[1]]
+    coef_inicial
+    alpha.est <- ifelse(BETA_ARMA, coef_inicial$coef["alpha"][[1]], NA)
+    nu.est <- ifelse(BETA_ARMA, coef_inicial$coef["nu"][[1]], NA)
+    phi.est <- ifelse(BETA_ARMA, coef_inicial$coef["phi"][[1]], coef_inicial$coef[[1]])
+    
+    if (BETA_ARMA & phi.est > 0.6) {
+      next
+    }
+    
+    print(paste0("Bootstrap (", k, ") - phi: ", phi.est, ", n: ", n_inicial))
+    bootstrap <- list()
+    for (i in 1:1000) {
+      amostra <- sim(
+        n = 100,
+        coefs = coeficientes(alpha = alpha.est, nu = nu.est, phi = phi.est)
       )
-    )
-  }
-  
-  # Quartis do bootstrap
-  limite.inf <- quantile(
-    unlist(lapply(bootstrap, function(x) x$coef$phi)),
-    probs = 0.025
-  )
-  limite.sup <- quantile(
-    unlist(lapply(bootstrap, function(x) x$coef$phi)),
-    probs = 0.95
-  )
-  
-  # Príxmas amostras
-  proximas_amostras_100 <- sim(
-    n = 100,
-    coefs = coeficientes(alpha = alpha.est, nu = nu.est, phi = phi.est + 0.3)
-  )
-  for (i in seq_colagens) {
-    boot.amostra <- sample(seq_len(length(bootstrap)), 1)
-    amostra <- bootstrap[[boot.amostra]]$amostra
-    proximas_amostras <- proximas_amostras_100[1:i]
-    if (i == 100) {
-      novo_dataset <- proximas_amostras
-    } else {
-      novo_dataset <- c(
-        amostra[(i + 1):length(amostra)],
-        proximas_amostras
+      coef <- fit(
+        yt = amostra,
+        start = list(alpha = alpha.est, nu = nu.est, phi = phi.est)
+      )
+      bootstrap[[i]] <- list(
+        amostra = amostra,
+        coef = list(
+          alpha = ifelse(BETA_ARMA, coef$coef["alpha"][[1]], NA),
+          nu = ifelse(BETA_ARMA, coef$coef["nu"][[1]], NA),
+          phi = ifelse(BETA_ARMA, coef$coef["phi"][[1]], coef$coef[[1]])
+        )
       )
     }
-  
-    coef <- fit(
-      yt = novo_dataset,
-      start = list(alpha = alpha.est, nu = nu.est, phi = phi.est)
+    
+    # Quartis do bootstrap
+    limite.inf <- quantile(
+      unlist(lapply(bootstrap, function(x) x$coef$phi)),
+      probs = 0.025
     )
-    phi.nova.amostra <- coef$coef["phi"][[1]]
-    coeficientes_estimados[[i]] <- c(
-      coeficientes_estimados[[i]],
-      phi.nova.amostra
+    limite.sup <- quantile(
+      unlist(lapply(bootstrap, function(x) x$coef$phi)),
+      probs = 0.95
     )
-    controle[[i]] <- c(
-      controle[[i]],
-      phi.nova.amostra < limite.inf | phi.nova.amostra > limite.sup
-    )
+    
+    
+    for (novo_phi in phis) {
+      # Próximas amostras
+      proximas_amostras_100 <- sim(
+        n = n_inicial,
+        coefs = coeficientes(alpha = alpha.est, nu = nu.est, phi = novo_phi)
+      )
+      for (i in seq_colagens) {
+        proximas_amostras <- proximas_amostras_100[1:i]
+        if (i > n_inicial) {
+          next
+        } else if (i == n_inicial) {
+          novo_dataset <- proximas_amostras
+        } else {
+          novo_dataset <- c(
+            amostra_inicial[(i + 1):length(amostra_inicial)],
+            proximas_amostras
+          )
+        }
+        
+        ok <- FALSE
+        tryCatch({
+          coef <- fit(
+            yt = novo_dataset,
+            start = list(alpha = alpha.est, nu = nu.est, phi = phi.est)
+          )
+          ok <- TRUE
+        }, error = function(e) {
+        })
+        
+        if (!ok) next
+        
+        phi.nova.amostra <- ifelse(BETA_ARMA, coef$coef["phi"][[1]], coef$coef[[1]])
+        
+        df <- rbind(
+          df,
+          data.table(
+            tamanho_inicial = n_inicial,
+            tamanho_colagem = i,
+            phi_estimado = phi.nova.amostra,
+            novo_phi = novo_phi,
+            controle = phi.nova.amostra < limite.inf | phi.nova.amostra > limite.sup
+          )
+        )
+      }
+    }
   }
 }
 
-df <- data.frame(
-  colagem = rep(seq_colagens, each = TAMANHO),
-  controle = unlist(controle)
-) %>%
-  group_by(colagem) %>%
+df_resumo <- df %>%
+  group_by(tamanho_inicial, tamanho_colagem, novo_phi) %>%
   summarise(
-    porcentagem_fora = sum(controle)/n()
+    controle = sum(controle),
+    total = n()
+  ) %>%
+  mutate(
+    proporcao = controle / total
   )
 
-
-ggplot(df, aes(x = colagem, y = porcentagem_fora)) +
-  geom_line() +
+p <- ggplot(df_resumo, aes(x = tamanho_colagem, y = proporcao, color = as.factor(novo_phi))) +
   geom_point() +
+  geom_line() +
   labs(
-    x = "Colagem",
-    y = "Porcentagem de amostras fora do intervalo"
+    x = "Tamanho da colagem",
+    y = "Proporção de controle",
+    color = "Novo valor de Phi"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  facet_wrap(~tamanho_inicial)
+
+ggsave("controle_ar.png", p, width = 10, height = 6, units = "in", dpi = 300)
+
+p
