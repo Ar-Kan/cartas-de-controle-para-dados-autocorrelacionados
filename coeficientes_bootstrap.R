@@ -6,8 +6,12 @@ library(data.table)
 library(writexl)
 
 BETA_ARMA <- FALSE
+SALVAR_DADOS <- TRUE
+SALVAR_DF <- TRUE
 
-coeficientes <- function(alpha = 0, nu = 20, phi = 0.2) {
+PHI_REAL <- 0.2
+
+coeficientes <- function(alpha = 0, nu = 20, phi = PHI_REAL) {
   if (!BETA_ARMA) {
     # Modelo AR
     return(
@@ -80,7 +84,7 @@ fit <- function(yt, start) {
 }
 
 seq_colagens <- c(1, 24, 49, 75, 99, 199)
-desvios_do_phi <- c(0, -0.1, 0.1, -0.3)
+desvios_do_phi <- c(0, 0.1, -0.3)
 tamanho_amostras_iniciais <- c(25, 50, 100, 200)
 
 df <- data.table(
@@ -88,12 +92,16 @@ df <- data.table(
   tamanho_colagem = numeric(),
   # Phi estimado para cada tamanho de colagem
   phi_estimado = numeric(),
-  novo_phi = numeric(),
+  novo_phi_estimado = numeric(),
   desvio = numeric(),
   # SEQ dos phis para cada tamanho de colagem
   fora_de_controle = logical(),
   limite.inf = numeric(),
-  limite.sup = numeric()
+  limite.sup = numeric(),
+  # SEQ dos phis para cada tamanho de colagem, no ARMA
+  fora_de_controle.teorico = logical(),
+  limite.inf.teorico = numeric(),
+  limite.sup.teorico = numeric()
 )
 
 tempo_inicial <- Sys.time()
@@ -138,20 +146,25 @@ for (k in 1:TAMANHO) {
       )
     }
     
-    # Quartis do bootstrap
-    limite.inf <- quantile(
-      unlist(lapply(bootstrap, function(x) x$coef$phi)),
-      probs = 0.025
-    )
-    limite.sup <- quantile(
-      unlist(lapply(bootstrap, function(x) x$coef$phi)),
-      probs = 0.975
-    )
+    # Quartis do bootstrap paramétrico
+    lista.phis <- unlist(lapply(bootstrap, function(x) x$coef$phi))
+    limite.inf <- quantile(lista.phis, probs = 0.025)
+    limite.sup <- quantile(lista.phis, probs = 0.975)
+    
+    if (!BETA_ARMA) {
+      # Quantis teóricos para o Phi estimado do modelo AR(1)
+      sd.teorico <- sqrt((sd(coef_inicial$residuals)^2 * (1 - phi.est^2)) / n_inicial)
+      limite.inf.teorico <- qnorm(0.025, mean = phi.est, sd = sd.teorico)
+      limite.sup.teorico <- qnorm(0.975, mean = phi.est, sd = sd.teorico)
+    } else {
+      limite.inf.teorico <- NA
+      limite.sup.teorico <- NA
+    }
     
     
     for (desvio in desvios_do_phi) {
       # Próximas amostras
-      novo_phi <- phi.est + desvio
+      novo_phi <- PHI_REAL + desvio
       proximas_amostras_100 <- sim(
         n = 200,
         coefs = coeficientes(alpha = alpha.est, nu = nu.est, phi = novo_phi)
@@ -160,7 +173,7 @@ for (k in 1:TAMANHO) {
         proximas_amostras <- proximas_amostras_100[1:sc]
         if (sc >= n_inicial) {
           # sem colagem, apenas amostras novas
-          novo_dataset <- proximas_amostras
+          novo_dataset <- proximas_amostras[max(c(1, sc - n_inicial)):sc]
         } else {
           novo_dataset <- c(
             amostra_inicial[(sc + 1):length(amostra_inicial)],
@@ -178,21 +191,28 @@ for (k in 1:TAMANHO) {
         }, error = function(e) {
         })
         
-        if (!ok) next
+        if (!ok) {
+          print("Erro no ajuste do modelo, pulando...")
+          next
+        }
         
         phi.nova.amostra <- ifelse(BETA_ARMA, coef$coef["phi"][[1]], coef$coef[[1]])
+        phi.nova.amostra.round <- round(phi.nova.amostra, 4)
         
         df <- rbind(
           df,
           data.table(
             tamanho_inicial = n_inicial,
             tamanho_colagem = sc,
-            phi_estimado = phi.nova.amostra,
-            novo_phi = novo_phi,
+            phi_estimado = phi.est,
+            novo_phi_estimado = phi.nova.amostra,
             desvio = desvio,
             fora_de_controle = (phi.nova.amostra < limite.inf) | (phi.nova.amostra > limite.sup),
             limite.inf = limite.inf,
-            limite.sup = limite.sup
+            limite.sup = limite.sup,
+            fora_de_controle.teorico = (phi.nova.amostra < limite.inf.teorico) | (phi.nova.amostra > limite.sup.teorico),
+            limite.inf.teorico = limite.inf.teorico,
+            limite.sup.teorico = limite.sup.teorico
           )
         )
       }
@@ -202,41 +222,100 @@ for (k in 1:TAMANHO) {
 
 tempo_final <- Sys.time()
 print(paste0("Fim das simulações para ", ifelse(BETA_ARMA, "BARMA", "AR"), "... ", tempo_final))
-print(paste0("Tempo total: ", tempo_final - tempo_inicial))
+print(paste0("Tempo total (horas): ", round(difftime(tempo_final, tempo_inicial, units = "hours"), 2)))
 
-df_resumo <- df %>%
-  group_by(
-    tamanho_inicial,
-    tamanho_colagem,
-    desvio
-  ) %>%
-  summarise(
-    controle = sum(fora_de_controle),
-    total = n()
-  ) %>%
-  mutate(
-    proporcao = controle / total
-  )
-
-p <- ggplot(df_resumo, aes(x = tamanho_colagem, y = proporcao, color = as.factor(desvio))) +
-  geom_hline(yintercept = 0.05, linetype = "dashed") +
-  geom_point() +
-  geom_line() +
-  labs(
-    x = "Tamanho da colagem",
-    y = "Proporção de controle",
-    color = "Desvio do Phi",
-    title = "Proporção de controle fora dos limites"
-  ) +
-  theme_minimal() +
-  facet_wrap(~tamanho_inicial)
 
 if (BETA_ARMA) {
-  ggsave("controle_bar.png", p, width = 10, height = 6, units = "in", dpi = 300)
-  write_xlsx(df, "df_bar.xlsx")
-} else {
-  ggsave("controle_ar.png", p, width = 10, height = 6, units = "in", dpi = 300)
-  write_xlsx(df, "df_ar.xlsx")
+  df_resumo <- df %>%
+    group_by(
+      tamanho_inicial,
+      tamanho_colagem,
+      desvio
+    ) %>%
+    summarise(
+      controle = sum(fora_de_controle),
+      dp = abs(sd(phi_estimado)),
+      total = n()
+    ) %>%
+    mutate(
+      proporcao = controle / total
+    )
+  
+  p <- ggplot(df_resumo, aes(x = tamanho_colagem, y = proporcao, color = as.factor(desvio))) +
+    geom_hline(yintercept = 0.05, linetype = "dashed") +
+    geom_line() +
+    geom_errorbar(
+      aes(ymin = proporcao - dp, ymax = proporcao + dp),
+      width = 0.2,
+      position = position_dodge(0.5)
+    ) +
+    labs(
+      x = "Quantidade de novas observações",
+      y = "Proporção fora de controle",
+      color = "Desvio do Phi",
+      title = "Proporção de controle fora dos limites - βAR(1)"
+    ) +
+    theme_minimal() +
+    facet_wrap(~tamanho_inicial)
+
+  if (SALVAR_DADOS) {
+    ggsave("controle_bar.png", p, width = 10, height = 6, units = "in", dpi = 300)
+    
+    if (SALVAR_DF) {
+      write_xlsx(df, "dados_simulacao_bar.xlsx")
+    }
+  }
+}
+
+if (!BETA_ARMA) {
+  df_resumo <- df %>%
+    group_by(
+      tamanho_inicial,
+      tamanho_colagem,
+      desvio
+    ) %>%
+    summarise(
+      controle = sum(fora_de_controle),
+      controle.teorico = sum(fora_de_controle.teorico),
+      dp = abs(sd(phi_estimado)),
+      total = n()
+    ) %>%
+    mutate(
+      proporcao = controle / total,
+      proporcao.teorico = controle.teorico / total
+    )
+  
+  p <- ggplot(df_resumo, aes(x = tamanho_colagem, y = proporcao, color = as.factor(desvio))) +
+    geom_hline(yintercept = 0.05, linetype = "dashed") +
+    geom_line() +
+    geom_line(aes(y = proporcao.teorico), linetype = "dashed") +
+    labs(
+      x = "Quantidade de novas observações",
+      y = "Proporção fora de controle",
+      color = "Desvio do Phi",
+      title = "Proporção de controle fora dos limites - AR(1)"
+    ) +
+    theme_minimal() +
+    facet_wrap(~tamanho_inicial) +
+    scale_color_manual(values = c("red", "blue", "green")) +
+    scale_y_continuous(limits = c(0, 1)) +
+    scale_x_continuous(breaks = seq(0, 200, 25)) +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      legend.box = "horizontal",
+      legend.box.just = "left",
+      legend.box.margin = margin(0, 0, 0, 0),
+      legend.spacing.x = unit(0.5, 'cm')
+    )
+  
+  if (SALVAR_DADOS) {
+    ggsave("controle_ar.png", p, width = 10, height = 6, units = "in", dpi = 300)
+    
+    if (SALVAR_DF) {
+      write_xlsx(df, "dados_simulacao_ar.xlsx")
+    }
+  }
 }
 
 p
