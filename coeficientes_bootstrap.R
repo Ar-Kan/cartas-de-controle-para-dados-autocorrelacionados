@@ -4,12 +4,14 @@ library(ggformula)
 library(dplyr)
 library(data.table)
 library(writexl)
+library(patchwork)
+library(cowplot)
 
 DEBUG <- FALSE
 
-USAR_BETA_ARMA <- TRUE
-# USAR_PHI_RNORM: se TRUE, simula o phi com rnorm(1, mean = phi.est, sd = sd.phi)
-USAR_PHI_RNORM <- TRUE
+USAR_BETA_ARMA <- TRUE # se TRUE, simula o modelo βARMA
+USAR_PHI_RNORM <- TRUE # se TRUE, simula o phi com rnorm(1, mean = phi.est, sd = sd.phi)
+CONTINUAR_COLAGEM_APOS_EXCEDER_N_INICIAL <- FALSE # se TRUE, continua colando após exceder o tamanho inicial (H1 com apenas novas amostras)
 
 SALVAR_GRAFICO <- FALSE
 SALVAR_DF <- FALSE
@@ -100,7 +102,10 @@ fit <- function(yt, start) {
   )
 }
 
-seq_colagens <- c(1, 24, 49, 75, 99, 199)
+bc <- c(1, 3, 5, 7, 9)
+seq_colagens <- unlist(lapply(seq(0, 100, 10), function(x) bc + x))
+seq_colagens <- c(seq_colagens, 135, 150, 165, 175, 185, 199)
+
 if (USAR_BETA_ARMA) {
   desvios_do_phi <- c(0, 0.1, -0.3, -0.6)
 } else {
@@ -180,7 +185,7 @@ for (k in 1:TAMANHO_MONTE_CARLO) {
       phi.maximo <- ifelse(n_inicial < 50, 0.8, 1)
     }
     
-    # Primeiro nível do Bootstrap
+    # Primeiro nível do Bootstrap Paramétrico
     # NOTA: reflete o comportamento do estimador de phi, assumindo que o processo não mudou
     phis.bootstrap <- replicate(TAMANHO_BOOTSTRAP,  {
       if (USAR_PHI_RNORM) {
@@ -205,14 +210,6 @@ for (k in 1:TAMANHO_MONTE_CARLO) {
           sd = sqrt(coef_inicial$sigma2)
         )
         
-        # residuo.aleatoriezado <- sample(residuos.modelo, size = n_inicial, replace = TRUE)
-        # amostra <- numeric(n_inicial)
-        # amostra[1] <- amostra_inicial[1]
-        # 
-        # for (t in 2:n_inicial) {
-        #   amostra[t] <- phi.boot * amostra[t - 1] + residuo.aleatoriezado[t]
-        # }
-        
         # Ajusta o modelo na nova amostra
         coef <- fit(
           yt = amostra,
@@ -225,29 +222,7 @@ for (k in 1:TAMANHO_MONTE_CARLO) {
       
       phi.novo
     })
-    
-    # # Segundo nível (Bootstrap interno ou Monte Carlo futuro)
-    # # NOTA: reflete como o phi se comportaria em novas amostras
-    # phis.bootstrap.segundo <- numeric(TAMANHO_BOOTSTRAP)
-    # for (i in 1:TAMANHO_BOOTSTRAP) {
-    #   # Simula uma nova amostra com os parâmetros estimados
-    #   amostra <- sim(
-    #     n = n_inicial * 4,
-    #     coefs = coeficientes(alpha = alpha.est, nu = nu.est, phi = phis.bootstrap[i]),
-    #     sd = sqrt(coef_inicial$sigma2)
-    #   )
-    #   # Ajusta o modelo na nova amostra
-    #   coef <- fit(
-    #     yt = amostra,
-    #     start = list(alpha = alpha.est, nu = nu.est, phi = phis.bootstrap[i])
-    #   )
-    # 
-    #   phis.bootstrap.segundo[i] <- ifelse(USAR_BETA_ARMA, coef$coef["phi"][[1]], coef$coef[[1]])
-    # }
-    # 
-    # # Quantis do bootstrap paramétrico
-    # limite.inf <- quantile(phis.bootstrap.segundo, probs = 0.025)
-    # limite.sup <- quantile(phis.bootstrap.segundo, probs = 0.975)
+
     limite.inf <- quantile(phis.bootstrap, probs = 0.025)
     limite.sup <- quantile(phis.bootstrap, probs = 0.975)
     
@@ -264,6 +239,11 @@ for (k in 1:TAMANHO_MONTE_CARLO) {
       for (sc in seq_colagens) {
         proximas_amostras <- amostras_futuras[1:sc]
         if (sc >= n_inicial) {
+          if (!CONTINUAR_COLAGEM_APOS_EXCEDER_N_INICIAL) {
+            # Não realiza colagem após exceder o tamanho inicial
+            
+            break
+          }
           # NOTA: Sem colagem, apenas amostras novas
           novo_dataset <- proximas_amostras[(sc - n_inicial + 1):sc]
         } else {
@@ -332,112 +312,100 @@ print(paste0("Fim das simulações para ", ifelse(USAR_BETA_ARMA, "BARMA", "AR")
 print(paste0("Tempo total (horas): ", round(difftime(tempo_final, tempo_inicial, units = "hours"), 2)))
 
 
-if (USAR_BETA_ARMA) {
-  df_resumo <- df %>%
-    group_by(
-      tamanho_inicial,
-      tamanho_colagem,
-      desvio
-    ) %>%
-    summarise(
-      controle = sum(fora_de_controle),
-      dp = abs(sd(phi_estimado)),
-      controle.z = sum(fora_de_controle.z),
-      total = n()
-    ) %>%
-    mutate(
-      proporcao = controle / total,
-      proporcao.z = controle.z / total,
-    )
+df_resumo <- df %>%
+  group_by(
+    tamanho_inicial,
+    tamanho_colagem,
+    desvio
+  ) %>%
+  summarise(
+    controle = sum(fora_de_controle),
+    dp = abs(sd(phi_estimado)),
+    controle.z = sum(fora_de_controle.z),
+    total = n()
+  ) %>%
+  mutate(
+    proporcao = controle / total,
+    proporcao.z = controle.z / total,
+    x_label = tamanho_colagem + tamanho_inicial,
+  )
+
+# Função para gerar o gráfico para cada tamanho_inicial
+gerar_grafico <- function(tam_inicial_dado, break_by = 10) {
+  data_breaks <- seq(tam_inicial_dado, tam_inicial_dado + 200, by = break_by)
+  data_breaks <- c(
+    tam_inicial_dado + 1,
+    data_breaks[data_breaks > tam_inicial_dado + 1]
+  )
   
-  p <- ggplot(df_resumo, aes(x = tamanho_colagem, y = proporcao, color = as.factor(desvio))) +
+  p <- ggplot(
+      df_resumo %>% filter(tamanho_inicial == tam_inicial_dado),
+      aes(x = x_label, y = proporcao, color = as.factor(desvio))
+    ) +
     geom_hline(yintercept = 0.05, linetype = "dotted") +
-    geom_line(size = 1, alpha = 0.6) +
+    geom_line(linewidth = 1, alpha = 0.6) +
+    geom_line(aes(y = proporcao.z),linewidth = 1, alpha = 0.6) +
     geom_line(aes(y = proporcao.z), linetype = "dashed", linewidth = 1, alpha = 0.6) +
     labs(
-      x = "Quantidade de novas observações",
+      title = paste("Tamanho inicial:", tam_inicial_dado),
+      x = "Quantidade total de observações",
       y = "Proporção fora de controle",
-      color = "Desvio do Phi",
-      title = "Proporção de controle fora dos limites - βAR(1)",
-      subtitle = "Linha contínua: controle com bootstrap\nLinha tracejada: controle com z-score"
+      color = "Desvio do Φ"
     ) +
-    theme_minimal() +
-    facet_wrap(~tamanho_inicial) +
     scale_color_manual(values = c("red", "blue", "darkgreen", "orange", "purple", "brown")) +
+    scale_x_continuous(breaks = data_breaks) +
     scale_y_continuous(limits = c(0, 1)) +
-    scale_x_continuous(breaks = seq(0, 200, 25)) +
-    theme(
-      legend.position = "bottom",
-      legend.title = element_blank(),
-      legend.box = "horizontal",
-      legend.box.just = "left",
-      legend.box.margin = margin(0, 0, 0, 0),
-      legend.spacing.x = unit(0.5, 'cm')
-    )
-
-  if (SALVAR_GRAFICO) {
-    ggsave("controle_bar.png", p, width = 10, height = 6, units = "in", dpi = 300)
-    print("Salvando gráfico BARMA...")
-    
-    if (SALVAR_DF) {
-      write_xlsx(df, "dados_simulacao_bar.xlsx")
-      print("Salvando dados BARMA...")
-    }
-  }
+    theme_minimal() +
+    theme(legend.position = "none")
+  
+  return(p)
 }
 
+# Gerar gráficos individuais
+g1 <- gerar_grafico(25, 5)
+g2 <- gerar_grafico(50, 10)
+g3 <- gerar_grafico(100, 25)
+g4 <- gerar_grafico(200, 50)
+
+# Montar layout com patchwork
+layout <- (g1 | g2) / (g3 | g4)
+
+# Adicionar título e legenda única
+final <- layout +
+  plot_annotation(
+    title = paste0(
+      "Proporção de controle fora dos limites - ",
+      ifelse(USAR_BETA_ARMA, "β", ""),
+      "AR(1)"
+    ),
+    subtitle = "Linha contínua: controle com bootstrap | Linha tracejada: controle com z-score",
+    theme = theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      plot.subtitle = element_text(size = 10)
+    )
+  ) & theme(legend.position = "bottom")
+
+
 if (!USAR_BETA_ARMA) {
-  df_resumo <- df %>%
-    group_by(
-      tamanho_inicial,
-      tamanho_colagem,
-      desvio
-    ) %>%
-    summarise(
-      controle = sum(fora_de_controle),
-      dp = abs(sd(phi_estimado)),
-      controle.z = sum(fora_de_controle.z),
-      total = n()
-    ) %>%
-    mutate(
-      proporcao = controle / total,
-      proporcao.z = controle.z / total,
-    )
-  
-  p <- ggplot(df_resumo, aes(x = tamanho_colagem, y = proporcao, color = as.factor(desvio))) +
-    geom_hline(yintercept = 0.05, linetype = "dotted") +
-    geom_line(size = 1, alpha = 0.6) +
-    geom_line(aes(y = proporcao.z), linetype = "dashed", linewidth = 1, alpha = 0.6) +
-    labs(
-      x = "Quantidade de novas observações",
-      y = "Proporção fora de controle",
-      color = "Desvio do Phi",
-      title = "Proporção de controle fora dos limites - AR(1)",
-      subtitle = "Linha contínua: controle com bootstrap\nLinha tracejada: controle com z-score"
-    ) +
-    theme_minimal() +
-    facet_wrap(~tamanho_inicial) +
-    scale_color_manual(values = c("red", "blue", "darkgreen", "orange", "purple", "brown")) +
-    scale_y_continuous(limits = c(0, 1)) +
-    scale_x_continuous(breaks = seq(0, 200, 25)) +
-    theme(
-      legend.position = "bottom",
-      legend.title = element_blank(),
-      legend.box = "horizontal",
-      legend.box.just = "left",
-      legend.box.margin = margin(0, 0, 0, 0),
-      legend.spacing.x = unit(0.5, 'cm')
-    )
-  
   if (SALVAR_GRAFICO) {
-    ggsave("controle_ar.png", p, width = 10, height = 6, units = "in", dpi = 300)
-    print("Salvando gráfico AR(1)...")
+    ggsave("controle_ar.png", final, width = 10, height = 6, units = "in", dpi = 300)
+    print("Salvo gráfico AR(1)...")
     
     if (SALVAR_DF) {
       write_xlsx(df, "dados_simulacao_ar.xlsx")
-      print("Salvando dados AR(1)...")
+      print("Salvos dados AR(1)...")
+    }
+  }
+} else {
+  if (SALVAR_GRAFICO) {
+    ggsave("controle_bar.png", final, width = 10, height = 6, units = "in", dpi = 300)
+    print("Salvo gráfico BARMA...")
+    
+    if (SALVAR_DF) {
+      write_xlsx(df, "dados_simulacao_bar.xlsx")
+      print("Salvos dados BARMA...")
     }
   }
 }
 
-print(p)
+print(final)
