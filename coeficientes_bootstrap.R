@@ -124,6 +124,7 @@ estimativas.modelo <- function(modelo.ar) {
   )
 }
 
+# Cola duas séries temporais, mantendo o tamanho da série inicial
 colar.series <- function(serie.h0, amostras_futuras, n.novos) {
   n_inicial <- length(serie.h0)
   proximas_amostras <- amostras_futuras[1:n.novos]
@@ -143,6 +144,7 @@ colar.series <- function(serie.h0, amostras_futuras, n.novos) {
   novo_dataset
 }
 
+# Bootstrap para criar os limites de controle de Phi
 executar.bootstrap <- function(n_inicial, phi.est, sd.phi, sigma2 = NULL, usar.phi.rnorm = FALSE) {
   # Obs.: Limite para manter a estabilidade do processo
   # Def1: o modelo AR(1) é estacionário, sse, |Φ| < 1
@@ -198,7 +200,8 @@ executar.bootstrap <- function(n_inicial, phi.est, sd.phi, sigma2 = NULL, usar.p
   )
 }
 
-realizar.controle <- function(n.inicial, n.novos, phi, y.start = NULL, sd = NULL, serie.h0 = NULL, usar.phi.rnorm = FALSE) {
+# Função que engloba os passos para realizar o controle da série temporal
+realizar.controle <- function(n.inicial, n.novos, phi, y.start = NULL, sd = NULL, serie.h0 = NULL, usar.phi.rnorm = TRUE) {
   # Simula a série de controle
   serie.controle <- sim(n.novos, coefs = coeficientes(phi = phi), y.start = y.start, sd = sd)
 
@@ -277,8 +280,7 @@ for (k in 1:TAMANHO_MONTE_CARLO) {
     controle <- realizar.controle(
       n.inicial = n_inicial,
       n.novos = n_inicial,
-      phi = PHI_REAL,
-      usar.phi.rnorm = TRUE, # Usar rnorm para simular o erro amostral do phi
+      phi = PHI_REAL
     )
     amostra_inicial <- controle$modelo$series
     # NOTA: Estimativa dos parâmetros da amostra inicial
@@ -332,9 +334,9 @@ for (k in 1:TAMANHO_MONTE_CARLO) {
         controle_novo <- realizar.controle(
           n.inicial = n_inicial,
           n.novos = sc,
-          phi = estimativas_novas$phi,
+          phi = estimativas_iniciais$phi,
           y.start = amostra_inicial[n_inicial],
-          sd = estimativas_novas$sd.phi,
+          sd = estimativas_iniciais$sd.phi,
           serie.h0 = amostra_inicial
         )
 
@@ -424,18 +426,18 @@ gerar_grafico <- function(tam_inicial_dado, break_by = 10) {
   return(p)
 }
 
-# Gerar gráficos individuais
-g1 <- gerar_grafico(25, 5)
-g2 <- gerar_grafico(50, 10)
-g3 <- gerar_grafico(100, 25)
-g4 <- gerar_grafico(200, 50)
-
-# Montar layout com patchwork
-layout <- (g1 | g2) / (g3 | g4)
-
-# Adicionar título e legenda única
+# # Gerar gráficos individuais
+# g1 <- gerar_grafico(25, 5)
+# g2 <- gerar_grafico(50, 10)
+# g3 <- gerar_grafico(100, 25)
+# g4 <- gerar_grafico(200, 50)
+# 
+# # Montar layout com patchwork
+# layout <- (g1 | g2) / (g3 | g4)
+# 
+# # Adicionar título e legenda única
 # final <- layout +
-final <- gerar_grafico(100, 25)+
+final <- gerar_grafico(100, 25) +
   plot_annotation(
     title = paste0(
       "Proporção de controle fora dos limites - ",
@@ -463,7 +465,7 @@ if (!USAR_BETA_ARMA) {
   }
 } else {
   if (SALVAR_GRAFICO) {
-    ggsave("controle_bar_online.png", final, width = 10, height = 6, units = "in", dpi = 300)
+    ggsave("controle_bar.png", final, width = 10, height = 6, units = "in", dpi = 300)
     print("Salvo gráfico BARMA...")
 
     if (SALVAR_DF) {
