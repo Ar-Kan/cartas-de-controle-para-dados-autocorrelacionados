@@ -14,8 +14,8 @@ B <- 800 # número de réplicas bootstrap
 DESVIOS_PHI <- c(0, 0.2, 0.6)
 
 # Tamanhos das novas observações em H1
-passo <- 23 # Passo para a sequência de colagens
-bc <- c(1) # c(1, 3, 5, 7, 9)
+passo <- 13 # Passo para a sequência de colagens
+bc <- c(1, 3, 7) # c(1, 3, 5, 7, 9)
 SEQ_COLAGENS <- unlist(lapply(seq(0, 100, passo), function(x) bc + x))
 SEQ_COLAGENS <- c(SEQ_COLAGENS, 135, 150, 165, 175, 185, 199)
 
@@ -146,8 +146,8 @@ DADOS_RESUMO <- DADOS_OUT %>%
 
 # Gráfico de proporção de séries fora de controle
 p1 <- ggplot(DADOS_RESUMO, aes(x = x_label, y = proporcao, color = factor(desvio))) +
-  # geom_line(linewidth = 0.8) +
-  geom_smooth(linewidth = 0.8, se = FALSE, method = "gam", formula = y ~ s(x, k = 5)) +
+  geom_line(linewidth = 0.8) +
+  # geom_smooth(linewidth = 0.8, se = FALSE, method = "gam", formula = y ~ s(x, k = 5)) +
   geom_point(size = 2) +
   geom_hline(yintercept = 0.05, linetype = "dotted") +
   annotate(
