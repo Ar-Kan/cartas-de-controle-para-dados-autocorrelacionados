@@ -1,16 +1,19 @@
 library(ggplot2)
 library(dplyr)
 library(data.table)
+library(MASS)
 
 set.seed(42)
 
 # Parâmetros gerais
 PHI_REAL <- 0.2 # valor verdadeiro de Φ
+THETA_REAL <- 0.5 # valor verdadeiro de Θ
 # N_INICIAL <- 100 # tamanho da amostra inicial
-tamanhos_amostrais_iniciais <- c(50, 100, 200) # tamanho da amostra inicial
-MC <- 500 # número de iterações Monte Carlo
+tamanhos_amostrais_iniciais <- c(100) # c(50, 100, 200) # tamanho da amostra inicial
+MC <- 300 # número de iterações Monte Carlo
 B <- 800 # número de réplicas bootstrap
 
+# DESVIOS_PHI <- c(0, 0.2, 0.6)
 DESVIOS_PHI <- c(0, 0.2, 0.6)
 
 # Tamanhos das novas observações em H1
@@ -22,36 +25,62 @@ SEQ_COLAGENS <- c(SEQ_COLAGENS, 135, 150, 165, 175, 185, 199)
 DADOS_OUT <- data.table(
   # Tamanho da amostra inicial
   n0 = numeric(),
-  # φ estimado da série inicial
-  phi0 = numeric(),
   # Quantidade de novas observações
   n1 = numeric(),
-  # φ estimado da série colada
-  phi1 = numeric(),
   # Desvio aplicado ao Φ
   desvio = numeric(),
   # Indica se a série colada está fora de controle
   fora_de_controle = logical(),
-  limite.inf = numeric(),
-  limite.sup = numeric()
+  t2.inf = numeric(),
+  t2.sup = numeric(),
+  t2.controle = numeric()
 )
 
-simula_ar1 <- function(n, phi, sd = NULL) {
-  # Simula AR(1)
-  args <- list(n = n, model = list(ar = phi))
+simula_arma <- function(n, phi, theta, sd = NULL) {
+  # Simula ARMA(1,1)
+  args <- list(n = n, model = list(ar = phi, ma = theta))
   if (!is.null(sd)) {
     args$sd <- sd
   }
   do.call(arima.sim, args)
 }
 
-fit_ar1 <- function(serie) {
-  # Ajusta AR(1) e retorna o modelo
-  arima(
-    serie,
-    order = c(1, 0, 0),
-    include.mean = FALSE,
-    method = "ML"
+fit_arma <- function(serie) {
+  # Ajusta ARMA(1,1) e retorna o modelo
+  tryCatch(
+    {
+      return(
+        arima(
+          serie,
+          order = c(1, 0, 1), # AR(1) e MA(1)
+          include.mean = FALSE,
+          method = "ML"
+        )
+      )
+    },
+    error = \(e) {
+      warning("Erro ao ajustar ARMA(1,1): ", e)
+      return(NA)
+    }
+  )
+}
+
+# Testa estacionaridade e invertibilidade
+arma_valido <- function(phi, theta) {
+  stab <- all(Mod(polyroot(c(1, -phi))) > 1)
+  inv <- all(Mod(polyroot(c(1, theta))) > 1)
+  stab && inv
+}
+
+# Extrai coeficientes e matriz de covariância do modelo ARMA
+arma_coef <- function(modelo) {
+  coefs <- coef(modelo)
+  list(
+    p = length(grep("^ar", names(coefs))), # número de termos AR
+    q = length(grep("^ma", names(coefs))), # número de termos MA
+    coef = coef(modelo), # coeficientes do modelo
+    vcov = vcov(modelo), # matriz de covariância dos coeficientes
+    vcov_inv = solve(vcov(modelo)) # inversa da matriz de covariância
   )
 }
 
@@ -64,15 +93,13 @@ for (mc in seq_len(MC)) {
 
   for (N_INICIAL in tamanhos_amostrais_iniciais) {
     ## 1) Simula e ajusta a série inicial
-    serie0 <- simula_ar1(N_INICIAL, PHI_REAL)
-    fit0 <- fit_ar1(serie0)
-    phi0 <- coef(fit0)[1]
-    # Erro padrão assintótico de phi em AR(1): sqrt((1-φ²)/(n - 1))
-    sd_phi0 <- sqrt((1 - phi0^2) / (N_INICIAL - 1))
+    serie0 <- simula_arma(N_INICIAL, PHI_REAL, THETA_REAL)
+    fit0 <- fit_arma(serie0)
+    coef0 <- arma_coef(fit0)
 
     for (desvio in DESVIOS_PHI) {
       # Próximas amostras
-      serie1 <- simula_ar1(N_INICIAL, PHI_REAL + desvio)
+      serie1 <- simula_arma(N_INICIAL, PHI_REAL + desvio, THETA_REAL)
 
       for (sc in SEQ_COLAGENS) {
         if (sc >= N_INICIAL) {
@@ -85,44 +112,94 @@ for (mc in seq_len(MC)) {
         stopifnot("A série de controle não possui o tamanho esperado" = length(serie1.controle) == N_INICIAL)
 
         # Ajusta a série colada
-        phi1 <- coef(fit_ar1(serie1.controle))[1]
+        phi1 <- coef(fit_arma(serie1.controle))[1]
+        theta1 <- coef(fit_arma(serie1.controle))[2]
+        if (is.na(phi1) || is.na(theta1)) {
+          print("Ajuste ARMA falhou, pulando iteração.")
+          next
+        }
 
         ## 2) Bootstrap paramétrico com colagem, usando a série0
         phis.boot <- numeric(B)
+        thetas.boot <- numeric(B)
         for (b in seq_len(B)) {
-          # 2.1) Gera um φ* via rnorm e força |φ*|<1 para garantir estacionaridade
+          # 2.1) Gera um coef* via mvrnorm, garantindo estacionaridade e invertibilidade
           repeat {
-            phi.star <- rnorm(1, mean = phi0, sd = sd_phi0)
-            if (abs(phi.star) < 1) {
-              break
-            }
+            coef.star <- mvrnorm(1, mu = coef0$coef, Sigma = coef0$vcov)
+            # TODO: Assim está correto?
+            phi.star <- if (coef0$p > 0) coef.star[1:coef0$p] else numeric(0)
+            theta.star <- if (coef0$q > 0) coef.star[(coef0$p + 1):(coef0$p + coef0$q)] else numeric(0)
+            if (arma_valido(phi.star, theta.star)) break
           }
-          # 2.2) Simula nova amostra AR(1) com φ*
-          serie.b <- simula_ar1(N_INICIAL, phi.star)
+          # 2.2) Simula nova amostra ARMA com coef*
+          serie.b <- simula_arma(N_INICIAL, phi.star, theta.star)
           # 2.3) Une as últimas sc observações de serie0 com as primeiras sc de serie.b
           serie.colada <- c(tail(serie0, N_INICIAL - sc), head(serie.b, sc))
           stopifnot("A série bootstrap não possui o tamanho esperado" = length(serie.colada) == N_INICIAL)
-          # 2.4) Refit AR(1) na série colada
-          fit.b <- fit_ar1(serie.colada)
-          # 2.5) Armazena φ* estimado
+
+          # 2.4) Refit ARMA na série colada
+          fit.b <- fit_arma(serie.colada)
+          if (
+            !(inherits(fit.b, "Arima") || inherits(fit.b, "ar")) && is.na(fit.b)
+          ) {
+            print("Ajuste ARMA falhou no bootstrap, pulando iteração.")
+            phis.boot[b] <- NA
+            thetas.boot[b] <- NA
+            next
+          }
+
+          # Verifica se o modelo ARMA ajustado está válido
+          stopifnot("O modelo ARMA ajustado não é válido" = !is.null(fit.b) &&
+            !is.na(coef(fit.b)[1]) &&
+            !is.na(coef(fit.b)[2]))
+
+          # 2.5) Armazena φ* e Θ* estimados
           phis.boot[b] <- coef(fit.b)[1]
+          thetas.boot[b] <- coef(fit.b)[2]
+        }
+
+        phis.boot <- na.omit(phis.boot)
+        thetas.boot <- na.omit(thetas.boot)
+
+        coef.vcov <- matrix(
+          c(
+            var(phis.boot), cov(phis.boot, thetas.boot),
+            cov(thetas.boot, phis.boot), var(thetas.boot)
+          ),
+          nrow = 2, ncol = 2, byrow = TRUE
+        )
+
+        coef.vcov.inv <- solve(coef.vcov)
+        phi.m <- mean(phis.boot)
+        theta.m <- mean(thetas.boot)
+
+        t2 <- numeric(B)
+        for (b in seq_len(length(phis.boot))) {
+          diff.b <- c(phis.boot[b], thetas.boot[b]) - c(phi.m, theta.m)
+          t2[b] <- t(diff.b) %*% coef.vcov.inv %*% diff.b
         }
 
         ## 3) Calcula limites de controle 2.5% / 97.5%
-        quant.boot <- quantile(phis.boot, probs = c(0.025, 0.975))
+        quant.boot <- quantile(t2, probs = c(0.025, 0.975))
+
+        # 4) Calcula T² para a série H1
+        t2.controle <- (
+          t(c(phi1, theta1) - c(phi.m, theta.m)) %*%
+            coef.vcov.inv %*%
+            (c(phi1, theta1) - c(phi.m, theta.m))
+        )[1]
 
         DADOS_OUT <- rbind(
           DADOS_OUT,
           data.table(
             n0 = N_INICIAL,
-            phi0 = phi0,
             n1 = sc,
-            phi1 = phi1,
             desvio = desvio,
-            # 4) Verifica se a série de H1 está fora de controle
-            fora_de_controle = (phi1 < quant.boot[1] || phi1 > quant.boot[2]),
-            limite.inf = quant.boot[1],
-            limite.sup = quant.boot[2]
+            # 5) Verifica se a série de H1 está fora de controle
+            fora_de_controle = (t2.controle < quant.boot[1] || t2.controle > quant.boot[2]),
+            t2.inf = quant.boot[1],
+            t2.sup = quant.boot[2],
+            t2.controle = t2.controle
           )
         )
       }
@@ -182,7 +259,7 @@ p1 <- ggplot(DADOS_RESUMO, aes(x = x_label, y = proporcao, color = factor(desvio
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 
-ggsave("controle_online_multiplos_ar.png", p1, width = 10, height = 6, units = "in", dpi = 300)
+# ggsave("controle_online_multiplos_ar.png", p1, width = 10, height = 6, units = "in", dpi = 300)
 
 print(p1)
 #
