@@ -10,17 +10,17 @@ PHI_REAL <- 0.2 # valor verdadeiro de Φ
 THETA_REAL <- 0.5 # valor verdadeiro de Θ
 # N_INICIAL <- 100 # tamanho da amostra inicial
 tamanhos_amostrais_iniciais <- c(100) # c(50, 100, 200) # tamanho da amostra inicial
-MC <- 300 # número de iterações Monte Carlo
-B <- 800 # número de réplicas bootstrap
+MC <- 100 # 300 # número de iterações Monte Carlo
+B <- 400 # 800 # número de réplicas bootstrap
 
 # DESVIOS_PHI <- c(0, 0.2, 0.6)
-DESVIOS_PHI <- c(0, 0.2, 0.6)
+DESVIOS_PHI <- c(0, 0.2) # , 0.6)
 
 # Tamanhos das novas observações em H1
-passo <- 13 # Passo para a sequência de colagens
-bc <- c(1, 3, 7) # c(1, 3, 5, 7, 9)
+passo <- 45 # Passo para a sequência de colagens
+bc <- c(5) # c(1, 3, 5, 7, 9)
 SEQ_COLAGENS <- unlist(lapply(seq(0, 100, passo), function(x) bc + x))
-SEQ_COLAGENS <- c(SEQ_COLAGENS, 135, 150, 165, 175, 185, 199)
+SEQ_COLAGENS <- c(5, 95) # c(SEQ_COLAGENS, 135, 150, 165, 175, 185, 199)
 
 DADOS_OUT <- data.table(
   # Tamanho da amostra inicial
@@ -38,11 +38,12 @@ DADOS_OUT <- data.table(
 
 simula_arma <- function(n, phi, theta, sd = NULL) {
   # Simula ARMA(1,1)
-  args <- list(n = n, model = list(ar = phi, ma = theta))
+  args <- list(n = 200 + n, model = list(ar = phi, ma = theta))
   if (!is.null(sd)) {
     args$sd <- sd
   }
-  do.call(arima.sim, args)
+  obs <- do.call(arima.sim, args)
+  return(tail(obs, n))
 }
 
 fit_arma <- function(serie) {
@@ -125,7 +126,7 @@ for (mc in seq_len(MC)) {
         for (b in seq_len(B)) {
           # 2.1) Gera um coef* via mvrnorm, garantindo estacionaridade e invertibilidade
           repeat {
-            coef.star <- mvrnorm(1, mu = coef0$coef, Sigma = coef0$vcov)
+            coef.star <- mvrnorm(1, mu = coef0$coef, Sigma = coef0$vcov * 1.2 * (N_INICIAL / (N_INICIAL - 1))) # Correção de Bessel
             # TODO: Assim está correto?
             phi.star <- if (coef0$p > 0) coef.star[1:coef0$p] else numeric(0)
             theta.star <- if (coef0$q > 0) coef.star[(coef0$p + 1):(coef0$p + coef0$q)] else numeric(0)
@@ -176,7 +177,7 @@ for (mc in seq_len(MC)) {
         t2 <- numeric(B)
         for (b in seq_len(length(phis.boot))) {
           diff.b <- c(phis.boot[b], thetas.boot[b]) - c(phi.m, theta.m)
-          t2[b] <- t(diff.b) %*% coef.vcov.inv %*% diff.b
+          t2[b] <- t(diff.b) %*% coef.vcov.inv %*% diff.b * (N_INICIAL / (N_INICIAL - 1))
         }
 
         ## 3) Calcula limites de controle 2.5% / 97.5%
@@ -259,7 +260,7 @@ p1 <- ggplot(DADOS_RESUMO, aes(x = x_label, y = proporcao, color = factor(desvio
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 
-# ggsave("controle_online_multiplos_ar.png", p1, width = 10, height = 6, units = "in", dpi = 300)
+# ggsave("controle_online_multiplos_ar_2.png", p1, width = 10, height = 6, units = "in", dpi = 300)
 
 print(p1)
 #

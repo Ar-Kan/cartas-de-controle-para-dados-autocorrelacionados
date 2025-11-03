@@ -1,0 +1,123 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# O problema
+
+Tenho duas amostras de uma mesma população, essas duas amostras se interseccionam até certo ponto.
+A partir dessas duas amostras quero estimar seus parâmetros e saber se são estatisticamente diferentes.
+Se eu tivesse a covariância entre os parâmetros, poderia fazer um teste Z, mas não tenho.
+
+
+# Tentativa 1
+
+Primeiro tentei definir dois modelos independentes, mas disso surgiu o problema de como combinar os dois modelos.
+
+Percebi que essa abordagem estava mal definida.
+
+A definição do problema é o seguinte:
+
+Tenho duas amostras de uma mesma população, essas amostras se interseccionam até certo grau, no espaço amostral, ou seja,
+as amostras podem possuir as mesmas observações, podendo, ou não, ser idênticas.
+O objetivo final é ter uma matriz vcov entre as estimativas dos parâmetros.
+
+Digamos que cada observação seja composta por dois parâmetros, $x$ e $y$, e que queremos estimar $y$ em função de $x$.
+
+Abaixo está o código com esses dois modelos, mas não funciona.
+Tenho dois modelos independentes, mas como eu posso combinar as obserbvações das duas amostras para regredir no mesmo modelo?
+Se eu juntasse y com y e x com x, de cada amostra, teria uma única estimativa do parâmetro, se eu adicionasse cada amostra como
+uma variável, teria duas estimativas, mas haveria um grande número de zeros, conforme a intersecção entre as amostras diminua,
+ou seja, digamos que a amostra 1 tenha x = x1 = (1, 2, 3, 4, 5) e a amostra 2 tenha x = x2 = (3, 4, 5, 6, 7),
+e y = y1 = (10, 20, 30, 40, 50) e y2 = (30, 40, 50, 60, 70), o modelo seria:
+
+| Y   |  X1 |  X2 |
+| --  | --- | --- |
+| 10  |  1  |  0  |
+| 20  |  2  |  0  |
+| 30  |  3  |  3  |
+| 40  |  4  |  4  |
+| 50  |  5  |  5  |
+| 60  |  0  |  6  |
+| 70  |  0  |  7  |
+
+
+```{r}
+Y  <- c(10, 20, 30, 40, 50, 60, 70)
+X1 <- c(1,  2,  3,  4,  5,  0,  0)
+X2 <- c(0,  0,  3,  4,  5,  6,  7)
+
+dados <- data.frame(Y, X1, X2)
+
+modelo <- lm(Y ~ X1 + X2, data = dados)
+
+summary(modelo)
+```
+
+# Tentativa 2
+
+Lembrei que exite o método Expectation-Maximization (EM) que estima os parâmetros de uma mistura de distribuições.
+
+Digamos então que cada modelo é uma distribuição, e que queremos estimar os parâmetros de cada distribuição.
+
+Segundo o ChatGPT, isso é uma mistura de duas regressões lineares (**mixture of two linear regressions**),
+onde existem dois regimes de regressão "ocultos" (data that come from two (or more) “hidden” regression regimes)
+
+Seja $y_i$ gerado por
+
+$$
+y_i = x_i^\top \beta_1 + \varepsilon_i,\quad \text{com probabilidade }\pi
+
+$$
+ou
+
+$$
+y_i = x_i^\top \beta_2 + \varepsilon_i,\quad \text{ com probabilidade }1-\pi
+$$
+
+onde $\varepsilon_i \sim N(0, \sigma^2_k)$ dependendo de qual componente o gerou.
+
+Como não sabemos de onde o componente $i$ foi gerado, introduzimos um indicador latente (latent indicator) $z_i \in \{1,2\}$ e definimos o EM como:
+
+## Definição do modelo
+
+### Parâmetros:
+
+$$
+\Theta = \{\pi,\,\beta_1,\beta_2,\,\sigma_1^2,\sigma_2^2\}
+$$
+### Variável latente
+
+$z_i = 1$ se $i$ foi gerado pela regressão 1 e $z_i = 2$ caso contrário.
+
+### A log-verossimilhança completa
+
+Caso $z_i$ fosse conhecido, a log-verossimilhança completa seria:
+
+$$
+\ell_c(\Theta) = \sum_{i=1}^n \Big[ \mathbf{I}_{[z_i=1]} \big(\log\pi + \log p(y_i|x_i;\beta_1,\sigma_1^2)\big) + \mathbf{I}_{[z_i=2]}\big(\log(1-\pi) + \log p(y_i|x_i;\beta_2,\sigma_2^2)\big)\Big]
+$$
+
+
+## Algoritmo EM
+
+#### Passo E (Expectation)
+
+No passo E, calculamos a expectativa da log-verossimilhança completa - "responsibilities" (probabilidade a posteriori de que 
+$i$ pertence ao componente $k$):
+
+$$
+\gamma_{i,1} = P(z_i=1\mid x_i,y_i;\Theta^{(t)}) = \frac{\pi^{(t)}\,\varphi\big(y_i; x_i^\top\beta_1^{(t)},\,\sigma_1^{2\,(t)}\big)} {\sum_{k=1}^2 \pi_k^{(t)}\,\varphi\big(y_i; x_i^\top\beta_k^{(t)},\,\sigma_k^{2\,(t)}\big)}
+$$
+
+e 
+
+$$
+\gamma_{i,2}=1-\gamma_{i,1}
+$$
+onde $\varphi(y;\mu,\sigma^2)$ é a FDP da distribuição normal.
+
+#### Passo M (Maximization)
+
+
+

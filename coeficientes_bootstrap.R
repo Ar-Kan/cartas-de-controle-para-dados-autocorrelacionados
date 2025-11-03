@@ -18,7 +18,7 @@ SALVAR_DF <- FALSE
 PHI_REAL <- 0.2
 
 TAMANHO_MONTE_CARLO <- 300
-TAMANHO_BOOTSTRAP <- 600
+TAMANHO_BOOTSTRAP <- 500
 
 coeficientes <- function(alpha = 0, nu = 20, phi = PHI_REAL) {
   if (!USAR_BETA_ARMA) {
@@ -125,6 +125,11 @@ estimativas.modelo <- function(modelo.ar) {
 }
 
 # Cola duas séries temporais, mantendo o tamanho da série inicial
+# 
+# Argumentos:
+# - serie.h0: série temporal inicial (H0)
+# - amostras_futuras: série temporal com as amostras futuras (H1)
+# - n.novos: número de novas amostras em H1 que serão coladas em H0
 colar.series <- function(serie.h0, amostras_futuras, n.novos) {
   n_inicial <- length(serie.h0)
   proximas_amostras <- amostras_futuras[1:n.novos]
@@ -134,7 +139,7 @@ colar.series <- function(serie.h0, amostras_futuras, n.novos) {
   } else {
     # NOTA: Colagem de amostras antigas (amostra inicial) e novas
     novo_dataset <- c(
-      amostra_inicial[(n.novos + 1):n_inicial],
+      serie.h0[(n.novos + 1):n_inicial],
       proximas_amostras
     )
   }
@@ -145,10 +150,20 @@ colar.series <- function(serie.h0, amostras_futuras, n.novos) {
 }
 
 # Bootstrap para criar os limites de controle de Phi
-executar.bootstrap <- function(n_inicial, phi.est, sd.phi, sigma2 = NULL, usar.phi.rnorm = FALSE) {
+# 
+# Argumentos:
+# - n_inicial: tamanho da amostra inicial (em H0)
+# - phi.est: estimativa do parâmetro phi da amostra inicial (em H0)
+# - sd.phi: desvio padrão do parâmetro phi da amostra inicial (em H0)
+# - sigma2: variância do erro do modelo AR(1) (opcional, apenas usado se USAR_BETA_ARMA for FALSE)
+# - usar.phi.rnorm: se TRUE, simula novos valores de phi a partir de uma distribuição normal
+# - serie.h0: se fornecido, utiliza essa série como base para colagem
+# - tamanho.h1: se fornecido, define o tamanho da série H1 (amostras futuras)
+executar.bootstrap <- function(n_inicial, phi.est, sd.phi, sigma2 = NULL, usar.phi.rnorm = FALSE, serie.h0 = NA, tamanho.h1 = NULL) {
+
   # Obs.: Limite para manter a estabilidade do processo
   # Def1: o modelo AR(1) é estacionário, sse, |Φ| < 1
-  # NOTA 1: Como N(μ, σ²) ⊂ ℝ, precisamos garantir Def1
+  # NOTA 1: Como Φ ~ N(μ, σ²) ⊂ ℝ, precisamos garantir Def1
   # NOTA 2: com |Φ| > 0.9, o modelo AR(1) é instável, especialmente com amostras pequenas.
   # NOTA 3: βAR(1) é instável com |Φ| > 0.6.
   if (USAR_BETA_ARMA) {
@@ -182,6 +197,14 @@ executar.bootstrap <- function(n_inicial, phi.est, sd.phi, sigma2 = NULL, usar.p
         coefs = coeficientes(phi = phi.boot),
         sd = sqrt(sigma2)
       )
+      
+      if (!is.na(serie.h0) && !is.null(tamanho.h1)) {
+        novo_dataset <- colar.series(
+          serie.h0 = serie.h0,
+          amostras_futuras = amostra,
+          n.novos = tamanho.h1
+        )
+      }
 
       # Ajusta o modelo na nova amostra
       coef <- fit(yt = amostra, start = coeficientes(phi = phi.boot))
@@ -201,7 +224,7 @@ executar.bootstrap <- function(n_inicial, phi.est, sd.phi, sigma2 = NULL, usar.p
 }
 
 # Função que engloba os passos para realizar o controle da série temporal
-realizar.controle <- function(n.inicial, n.novos, phi, y.start = NULL, sd = NULL, serie.h0 = NULL, usar.phi.rnorm = TRUE) {
+realizar.controle <- function(n.inicial, n.novos, phi, y.start = NULL, sd = NULL, serie.h0 = NULL, usar.phi.rnorm = TRUE, usar.boot.colagem = FALSE) {
   # Simula a série de controle
   serie.controle <- sim(n.novos, coefs = coeficientes(phi = phi), y.start = y.start, sd = sd)
 
@@ -218,12 +241,16 @@ realizar.controle <- function(n.inicial, n.novos, phi, y.start = NULL, sd = NULL
 
   # Estima os parâmetros do modelo
   estimativas.controle <- estimativas.modelo(modelo.controle)
+  
+  
   # Realiza o bootstrap para obter os limites de controle
   limites.bootstrap <- executar.bootstrap(
     n_inicial = n.inicial,
     phi.est = estimativas.controle$phi,
     sd.phi = estimativas.controle$sd.phi,
-    usar.phi.rnorm = usar.phi.rnorm
+    usar.phi.rnorm = usar.phi.rnorm,
+    serie.h0 = ifelse(usar.boot.colagem, serie.h0, NA),
+    tamanho.h1 = ifelse(usar.boot.colagem, n.novos, NULL),
   )
 
   # Retorna as estimativas e limites de controle
@@ -337,7 +364,8 @@ for (k in 1:TAMANHO_MONTE_CARLO) {
           phi = estimativas_iniciais$phi,
           y.start = amostra_inicial[n_inicial],
           sd = estimativas_iniciais$sd.phi,
-          serie.h0 = amostra_inicial
+          serie.h0 = amostra_inicial,
+          usar.boot.colagem = TRUE,
         )
 
         # Z-score
