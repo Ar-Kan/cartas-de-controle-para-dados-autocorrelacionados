@@ -1,0 +1,108 @@
+\documentclass[a4paper,12pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\usepackage{amsmath,amssymb}
+\usepackage{setspace}
+\usepackage{parskip}
+
+\author{}
+\date{}
+
+\begin{document}
+
+    \thispagestyle{empty}
+
+
+
+
+    \vspace{0.4cm}
+    \centering
+
+    \begin{tikzpicture}[node distance=1.80cm, auto,
+        startstop/.style={rectangle, rounded corners, minimum width=6cm, minimum height=0.6cm, text centered, draw=black, fill=gray!20},
+        process/.style={rectangle, minimum width=6cm, minimum height=0.6cm, text centered, draw=black, fill=blue!10},
+        arrow/.style={thick,->,>=Stealth}]
+
+
+\node (start) [startstop] {Simulação da série $y_t$, $t=1\dots T$ de AR(1)};
+\node (fit1) [process, below of=start] {Ajuste AR(1) em $y_t$ (obtendo $\hat{\boldsymbol\phi}$)};
+\node (fit2) [process, below of=fit1] {Obtem $\hat {\phi}_{T+L} / [y_{L},\dots,y_{T+L-1}]$ };
+\node (boot) [process, below of=fit2] {Boot $b=1\dots B$: Com $\hat{\boldsymbol\phi}$ gera-se nova série $y_t^*$ de tamanho $T$};
+\node (calc) [process, below of=boot] {Obtém ${y_t}^{**} = y_t[L:T] \; y_t^*[1:L]$};
+\node (fit3) [process, below of=calc] {Ajuste AR(1) em ${y_t}^{**}$ (obtém e guarda
+    $\hat{\boldsymbol\phi^*}$)
+};
+\node (dist) [process, below of=fit3] {Fim do boot: intervalo de controle de $\hat{\boldsymbol\phi^*}$ L passos à frente};
+\node (compare) [process, below of=dist] {Comparar a previsão $\hat {\phi}_{T+L}$ via AR(1) em $y_t$ aos quantis da distribuição};
+\node (stop) [startstop, below of=compare] {Fim};
+
+% Setas
+\draw [arrow] (start) -- (fit1);
+\draw [arrow] (fit1) -- (fit2);
+\draw [arrow] (fit2) -- (boot);
+\draw [arrow] (boot) -- (calc);
+\draw [arrow] (calc) -- (fit3);
+\draw [arrow] (fit3) -- (dist);
+\draw [arrow] (dist) -- (compare);
+\draw [arrow] (compare) -- (stop);
+
+    \end{tikzpicture}
+    \vspace{4pt}
+
+
+    \newpage
+
+
+    \centering
+    \begin{tikzpicture}[
+        node distance=1.80cm,
+        auto,
+        startstop/.style={
+            rectangle,
+            rounded corners,
+            minimum width=8.5cm,
+            minimum height=0.9cm,
+            text centered,
+            draw=black,
+            fill=gray!20
+        },
+        process/.style={
+            rectangle,
+            minimum width=8.5cm,
+            minimum height=0.9cm,
+            text centered,
+            draw=black,
+            fill=blue!10
+        },
+        arrow/.style={thick,->,>=Stealth}
+    ]
+
+\node (start) [startstop] {Simulação da série $y_t$, $t=1,\dots,T$, de ARMA(1,1)};
+\node (fit1) [process, below of=start] {Ajuste ARMA(1,1) em $y_t$ (obtendo $\hat{\phi}$ e $\hat{\theta}$)};
+\node (fit2) [process, below of=fit1] {Obtém $(\hat{\phi}_c,\hat{\theta}_c)$ na série colada};
+\node (boot) [process, below of=fit2] {Boot $b=1,\dots,B$: com $(\hat{\phi},\hat{\theta})$ gera-se nova série $y_t^*$ de tamanho $T$};
+\node (calc) [process, below of=boot] {Obtém ${y_t}^{**}=y_t[L:T]\;y_t^*[1:L]$};
+\node (fit3) [process, below of=calc] {Ajuste ARMA(1,1) em ${y_t}^{**}$ (obtém e guarda $(\hat{\phi}_b^*,\hat{\theta}_b^*)$)};
+\node (dist) [process, below of=fit3] {Fim do boot: obtém a distribuição bootstrap da estatística $T^2$};
+\node (compare) [process, below of=dist] {Comparar $T_c^2$ aos quantis da distribuição bootstrap de $T^2$};
+\node (stop) [startstop, below of=compare] {Fim};
+
+\draw [arrow] (start) -- (fit1);
+\draw [arrow] (fit1) -- (fit2);
+\draw [arrow] (fit2) -- (boot);
+\draw [arrow] (boot) -- (calc);
+\draw [arrow] (calc) -- (fit3);
+\draw [arrow] (fit3) -- (dist);
+\draw [arrow] (dist) -- (compare);
+\draw [arrow] (compare) -- (stop);
+
+    \end{tikzpicture}
+
+
+\end{document}
