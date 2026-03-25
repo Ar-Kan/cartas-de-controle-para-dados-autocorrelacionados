@@ -1,0 +1,30 @@
+[project]
+name = "cartas-de-controle-para-dados-autocorrelacionados"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.3",
+    "pandas>=3.0.1",
+    "scipy>=1.17.1",
+    "statsmodels>=0.14.6",
+]
+
+[dependency-groups]
+dev = [
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[tool.setuptools]
+packages = [
+    "scripts"
+]
+
+[project.scripts]
+main = "scripts.cartas_de_controle:executa"

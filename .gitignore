@@ -9,3 +9,5 @@ lib
 !.github
 /.quarto/
 *_files/
+*.egg-info
+*.egg
