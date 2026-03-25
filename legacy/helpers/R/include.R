@@ -69,8 +69,8 @@ my.plotly <- function(p) {
 
 # Função para salvar e carregar resultados
 cache_dados <- function(chave, funcao_geradora) {
-  c <- paste("cache", chave, sep = "/")
-  c <- paste(c, "rds", sep = ".")
+  c <- paste("../../../cache", chave, sep = "/")
+  c <- paste(c, "rds", sep = "")
   cache <- file.exists(c)
 
   if (!cache) {
