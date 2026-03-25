@@ -1,23 +1,23 @@
 ---
 title: "Controle de processos βAR(1)"
 output:
-  html_document:
-    df_print: paged
-    theme: paper
-    highlight: tango
-    toc: true
-    toc_float:
-      collapsed: true
-    code_folding: hide
+html_document:
+df_print: paged
+theme: paper
+highlight: tango
+toc: true
+toc_float:
+collapsed: true
+code_folding: hide
 knit: (function(input, encoding) {
-    rmarkdown::render(
-      input,
-      encoding = encoding,
-      output_format = 'html_document',
-      output_dir = dirname(input),
-      output_file = 'index.html'
-    );
-  })
+rmarkdown::render(
+input,
+encoding = encoding,
+output_format = 'html_document',
+output_dir = dirname(input),
+output_file = 'index.html'
+);
+})
 ---
 
 <style>
@@ -95,8 +95,8 @@ my.plotly <- function(p) {
 ```{r echo=FALSE}
 # Função para salvar e carregar resultados
 cache_dados <- function(chave, funcao_geradora) {
-  c <- paste("cache", chave, sep = "/")
-  c <- paste(c, "rds", sep = ".")
+  c <- paste("../cache", chave, sep = "/")
+  c <- paste(c, "rds", sep = "..")
   cache <- file.exists(c)
 
   if (!cache) {
@@ -663,7 +663,7 @@ ggplotly(
         "Fora de controle" = adjustcolor("#f42f2f", alpha.f = 0.8)
       )
     ) +
-    labs(title = "EWMA para resíduos βAR(1), com λ = 0.8", ) +
+    labs(title = "EWMA para resíduos βAR(1), com λ = 0.8",) +
     theme.base +
     theme(legend.position = "bottom", legend.title = element_blank()) +
     facet_wrap(vars(`Φ₂`), ncol = 2, labeller = "label_both")
@@ -934,7 +934,7 @@ ggplotly(
         "Fora de controle" = adjustcolor("#f42f2f", alpha.f = 0.6)
       )
     ) +
-    labs(title = "EWMA-AR com λ = 0.07", ) +
+    labs(title = "EWMA-AR com λ = 0.07",) +
     theme.base +
     theme(legend.position = "bottom", legend.title = element_blank()) +
     facet_wrap(vars(`Φ₂`), ncol = 2, labeller = "label_both")
@@ -1178,7 +1178,7 @@ ggplotly(
         "Limite de decisão" = adjustcolor("red", alpha.f = 0.5)
       )
     ) +
-    labs(title = "CUSUM para resíduos βAR(1)", ) +
+    labs(title = "CUSUM para resíduos βAR(1)",) +
     theme.base +
     theme(legend.position = "bottom", legend.title = element_blank()) +
     facet_wrap(vars(`Φ₂`), ncol = 2, labeller = "label_both")
