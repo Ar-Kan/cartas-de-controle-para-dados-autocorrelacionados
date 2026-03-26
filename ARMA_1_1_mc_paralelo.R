@@ -15,8 +15,8 @@ set.seed(42)
 # ==============================
 # PARÂMETROS
 # ==============================
-PHI_REAL_LISTA <- c(0.3)
-THETA_REAL_LISTA <- c(0.6)
+PHI_REAL_LISTA <- c(0.2)
+THETA_REAL_LISTA <- c(0.5)
 
 tamanhos_amostrais_iniciais <- c(100)
 
@@ -57,7 +57,6 @@ fit_arma <- function(serie) {
       serie,
       order = c(1, 0, 1),
       include.mean = FALSE,
-      method = "ML"
     ),
     error = function(e) NA
   )
@@ -107,8 +106,8 @@ bootstrap_coef_validos <- function(coef0, max_tentativas = 100L) {
       return(NULL)
     }
 
-    phi_star <- unname(coef_star[1])
-    theta_star <- unname(coef_star[2])
+    phi_star <- unname(coef_star["ar1"])
+    theta_star <- unname(coef_star["ma1"])
 
     if (ar_valido(phi_star) && ma_valido(theta_star)) {
       return(c(phi_star = phi_star, theta_star = theta_star))
@@ -119,22 +118,23 @@ bootstrap_coef_validos <- function(coef0, max_tentativas = 100L) {
 }
 
 executa_um_mc <- function(
-    mc,
-    PHI_REAL,
-    THETA_REAL,
-    tamanhos_amostrais_iniciais,
-    DESVIOS_PHI,
-    DESVIOS_THETA,
-    SEQ_COLAGENS,
-    B,
-    MC_TOTAL) {
+  mc,
+  PHI_REAL,
+  THETA_REAL,
+  tamanhos_amostrais_iniciais,
+  DESVIOS_PHI,
+  DESVIOS_THETA,
+  SEQ_COLAGENS,
+  B,
+  MC_TOTAL) {
   # cat(sprintf("mc=%d | pid=%d\n", mc, Sys.getpid()))
 
   resultados_mc <- list()
   idx_res <- 1L
 
   for (N_INICIAL in tamanhos_amostrais_iniciais) {
-    # Simula série original sob controle (H0)
+    # Simula série original sob controle (Fase 1)
+    # Observações nas quais que se assume que o sistema está em controle
     serie0 <- tryCatch(
       simula_arma(N_INICIAL, PHI_REAL, THETA_REAL),
       error = function(e) NULL
@@ -149,13 +149,14 @@ executa_um_mc <- function(
 
     for (desvio_phi in DESVIOS_PHI) {
       for (desvio_theta in DESVIOS_THETA) {
-        # Altera os parâmetros reais para simular a série alternativa (H1)
+        # Altera os parâmetros reais para simular a série alternativa (Fase 2)
         phi_alt <- PHI_REAL + desvio_phi
         theta_alt <- THETA_REAL + desvio_theta
 
         if (!ar_valido(phi_alt) || !ma_valido(theta_alt)) next
 
-        # Simula série alternativa (H1)
+        # Simula série alternativa (Fase 2)
+        # Observações que foram obtidas opós série de controle da Fase 1
         serie1 <- tryCatch(
           simula_arma(N_INICIAL, phi_alt, theta_alt),
           error = function(e) NULL
@@ -165,7 +166,7 @@ executa_um_mc <- function(
         for (sc in SEQ_COLAGENS) {
           if (sc >= N_INICIAL) break
 
-          # Colagem: mantém os últimos de H0 e os primeiros de H1
+          # Colagem: mantém os últimos da Fase 1 e os primeiros da Fase 2
           serie1_controle <- c(
             tail(serie0, N_INICIAL - sc),
             head(serie1, sc)
@@ -182,7 +183,7 @@ executa_um_mc <- function(
 
           if (!is.finite(phi_hat) || !is.finite(theta_hat)) next
 
-          # Bootstrap para obter distribuição de T² sob H0
+          # Bootstrap para obter distribuição de T² sob H0 (sistema em controle)
           # COMEÇO DO BOOTSTRAP
 
           phi_boot <- rep(NA_real_, B)
@@ -196,20 +197,20 @@ executa_um_mc <- function(
             phi_star <- unname(coef_star["phi_star"])
             theta_star <- unname(coef_star["theta_star"])
 
-            # Simula série bootstrap com os coeficientes gerados (H1*)
-            serie_b <- tryCatch(
+            # Simula série Fase 2*
+            serie1_b <- tryCatch(
               simula_arma(N_INICIAL, phi_star, theta_star),
               error = function(e) NULL
             )
-            if (is.null(serie_b)) next
+            if (is.null(serie1_b)) next
 
-            # Colagem para série bootstrap: mantém os últimos de H0 e os primeiros de H1*
-            serie_colada <- c(
+            # Colagem para série bootstrap: mantém os últimos de Fase 1 e os primeiros de Fase 2*
+            serie_colada_b <- c(
               tail(serie0, N_INICIAL - sc),
-              head(serie_b, sc)
+              head(serie1_b, sc)
             )
 
-            fit_b <- fit_arma(serie_colada)
+            fit_b <- fit_arma(serie_colada_b)
             if (length(fit_b) == 1 && is.na(fit_b)) next
 
             coef_b <- tryCatch(coef(fit_b), error = function(e) NULL)
@@ -250,20 +251,15 @@ executa_um_mc <- function(
           }, numeric(1))
 
           # Obtém quantis de T² para o intervalo de confiança
-          quant_boot <- quantile(
-            t2_boot,
-            probs = c(0.025, 0.975),
-            na.rm = TRUE,
-            names = FALSE
-          )
+          limite_sup <- quantile(t2_boot, probs = 0.95, na.rm = TRUE, names = FALSE)
 
-          # Calcula T² para o par (φ^, θ^) da série colada (H1)
           diff_ctrl <- c(phi_hat, theta_hat) - c(phi_m, theta_m)
           t2_controle <- as.numeric(
             t(diff_ctrl) %*% coef_vcov_inv %*% diff_ctrl
           )
 
-          esta_fora_de_controle <- t2_controle < quant_boot[1] || t2_controle > quant_boot[2]
+          # esta_fora_de_controle <- t2_controle < quant_boot[1] || t2_controle > quant_boot[2]
+          esta_fora_de_controle <- t2_controle > limite_sup
 
           resultados_mc[[idx_res]] <- data.table(
             mc = mc,
@@ -274,10 +270,10 @@ executa_um_mc <- function(
             desvio_phi = desvio_phi,
             desvio_theta = desvio_theta,
             fora_de_controle = esta_fora_de_controle,
-            t2_inf = quant_boot[1],
-            t2_sup = quant_boot[2],
+            t2_sup = limite_sup,
             t2_controle = t2_controle,
-            numero_de_bootstrap_validos = length(t2_boot)
+            numero_de_bootstrap_validos = length(t2_boot),
+            traco_t2 = sum(diag(coef_vcov))
           )
 
           idx_res <- idx_res + 1L
@@ -367,3 +363,96 @@ DADOS_OUT <- rbindlist(DADOS_OUT_LIST, fill = TRUE)
 
 message("Concluído com sucesso.")
 print(head(DADOS_OUT))
+
+
+DADOS_OUT %>%
+  mutate(
+    label = paste0(
+      "Φ = ", round(phi, 2),
+      "; Θ = ", round(theta, 2)
+    )
+  ) %>%
+  group_by(label, n0, n1) %>%
+  summarise(proporcao = mean(fora_de_controle), .groups = "drop") %>%
+  mutate(
+    x_label = n1 + n0,
+    se = sqrt(proporcao * (1 - proporcao) / MC),
+    ic_inf = pmax(0, proporcao - 1.96 * se),
+    ic_sup = pmin(1, proporcao + 1.96 * se)
+  ) %>%
+  ggplot(aes(x = x_label, y = proporcao, color = label)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup), width = 5) +
+  geom_hline(yintercept = 0.05, linetype = "dotted") +
+  labs(
+    title = "Proporção de Séries Fora de Controle (ARMA(1,1)).png",
+    x = "Tamanho da Série Colada (n0 + n1)",
+    y = "Proporção Fora de Controle",
+    color = "Parâmetros (Φ; Θ)"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal() +
+  scale_color_brewer(
+    palette = "Dark2",
+    labels = scales::label_wrap(20),
+    guide = guide_legend(nrow = 2)
+  ) +
+  facet_wrap(~n0,
+             labeller = labeller(n0 = \(x) paste0("Tamanho Inicial: ", x)),
+             scales = "free_x"
+  ) +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+
+DADOS_OUT %>%
+  mutate(
+    label = paste0(
+      "Φ = ", round(phi, 2),
+      "; Θ = ", round(theta, 2)
+    )
+  ) %>%
+  group_by(label, n0, n1) %>%
+  summarise(
+    traco_medio = mean(traco_t2, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  ggplot(aes(x = n1, y = traco_medio, color = label)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2) +
+  labs(
+    title = "Traço Médio da Matriz de Covariância dos Coeficientes Bootstrap.png",
+    x = "Tamanho da Série Colada (n1)",
+    y = "Traço Médio",
+    color = "Parâmetros (Φ; Θ)"
+  ) +
+  theme_minimal()
+
+DADOS_OUT %>%
+  mutate(
+    label = paste0(
+      "Φ = ", round(phi, 2),
+      "; Θ = ", round(theta, 2)
+    )
+  ) %>%
+  group_by(label, n0, n1) %>%
+  summarise(
+    t2_sup_med = mean(t2_sup, na.rm = TRUE),
+    t2_controle_med = mean(t2_controle, na.rm = TRUE),
+    t2_dif = t2_sup_med - t2_controle_med,
+    .groups = "drop"
+  ) %>%
+  ggplot(aes(x = n1, y = t2_dif, color = label)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2) +
+  labs(
+    title = "Diferença entre T² de Controle e Limite Superior do Bootstrap.png",
+    x = "Tamanho da Série Colada (n1)",
+    y = "T² Sup. Bootstrap - T² Controle",
+    color = "Parâmetros (Φ; Θ)"
+  ) +
+  theme_minimal()

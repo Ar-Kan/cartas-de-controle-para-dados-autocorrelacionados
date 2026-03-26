@@ -52,14 +52,14 @@ simula_arma <- function(n, phi, theta, sd = NULL) {
 # Ajusta ARMA(1,1)
 fit_arma <- function(serie) {
   tryCatch(
-    {
-      arima(
-        serie,
-        order = c(1, 0, 1), # ARMA(1,1)
-        include.mean = FALSE,
-        method = "ML"
-      )
-    },
+  {
+    arima(
+      serie,
+      order = c(1, 0, 1), # ARMA(1,1)
+      include.mean = FALSE,
+      method = "ML"
+    )
+  },
     error = function(e) {
       warning("Erro ao ajustar ARMA(1,1): ", e)
       return(NA)
@@ -139,14 +139,14 @@ for (PHI_REAL in PHI_REAL_LISTA) {
               theta.boot <- numeric(B)
               for (b in seq_len(B)) {
                 tryCatch(
-                  {
-                    repeat {
-                      coef.star <- mvrnorm(1, mu = coef0$coef, Sigma = coef0$vcov)
-                      phi.star <- coef.star[1]
-                      theta.star <- coef.star[2]
-                      if (ar_valido(phi.star) && ma_valido(theta.star)) break
-                    }
-                  },
+                {
+                  repeat {
+                    coef.star <- mvrnorm(1, mu = coef0$coef, Sigma = coef0$vcov)
+                    phi.star <- coef.star[1]
+                    theta.star <- coef.star[2]
+                    if (ar_valido(phi.star) && ma_valido(theta.star)) break
+                  }
+                },
                   error = function(e) {
                     ## 'Sigma' is not positive definite
                     warning("Erro na geração de coeficientes bootstrap: ", e)
@@ -249,7 +249,7 @@ p1 <- ggplot(DADOS_RESUMO, aes(
   geom_point(size = 2) +
   geom_hline(yintercept = 0.05, linetype = "dotted") +
   labs(
-    title = "Proporção de Séries Fora de Controle (ARMA(1,1))",
+    title = "Proporção de Séries Fora de Controle (ARMA(1,1)).png",
     x = "Tamanho da Série Colada (n0 + n1)",
     y = "Proporção Fora de Controle",
     color = "Desvios (Φ1; Θ1)"
@@ -258,8 +258,8 @@ p1 <- ggplot(DADOS_RESUMO, aes(
   theme_minimal() +
   scale_color_brewer(palette = "Dark2") +
   facet_wrap(~n0,
-    labeller = labeller(n0 = \(x) paste0("Tamanho Inicial: ", x)),
-    scales = "free_x"
+             labeller = labeller(n0 = \(x) paste0("Tamanho Inicial: ", x)),
+             scales = "free_x"
   ) +
   theme(
     legend.position = "bottom",
@@ -292,7 +292,7 @@ DADOS_OUT %>%
   # geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup), width = 5) +
   geom_hline(yintercept = 0.05, linetype = "dotted") +
   labs(
-    title = "Proporção de Séries Fora de Controle (ARMA(1,1))",
+    title = "Proporção de Séries Fora de Controle (ARMA(1,1)).png",
     x = "Tamanho da Série Colada (n0 + n1)",
     y = "Proporção Fora de Controle",
     color = "Parâmetros (Φ; Θ)"
@@ -305,8 +305,8 @@ DADOS_OUT %>%
     guide = guide_legend(nrow = 2)
   ) +
   facet_wrap(~n0,
-    labeller = labeller(n0 = \(x) paste0("Tamanho Inicial: ", x)),
-    scales = "free_x"
+             labeller = labeller(n0 = \(x) paste0("Tamanho Inicial: ", x)),
+             scales = "free_x"
   ) +
   theme(
     legend.position = "bottom",
@@ -337,7 +337,7 @@ p1__ <- ggplot(DADOS_RESUMO__, aes(
   geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup), width = 5) +
   geom_hline(yintercept = 0.05, linetype = "dotted") +
   labs(
-    title = "Proporção de Séries Fora de Controle (ARMA(1,1))",
+    title = "Proporção de Séries Fora de Controle (ARMA(1,1)).png",
     x = "Tamanho da Série Colada (n0 + n1)",
     y = "Proporção Fora de Controle",
     color = "Desvios (Φ1; Θ1)"
