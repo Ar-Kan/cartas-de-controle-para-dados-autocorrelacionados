@@ -18,15 +18,13 @@ set.seed(42)
 PHI_REAL_LISTA <- c(0.2)
 THETA_REAL_LISTA <- c(0.5)
 
-TAMANHOS_AMOSTRAIS_INICIAIS <- c(100)
+TAMANHOS_AMOSTRAIS_INICIAIS <- c(100, 1000)
 
 MC <- 500
 B <- 500
 
-DESVIOS_PHI <- c(0)
-DESVIOS_THETA <- c(0)
-
-SEQ_COLAGENS <- c(1, 50, 99, 150)
+DESVIOS_PHI <- c(0, 0.2)
+DESVIOS_THETA <- c(0, -0.2)
 
 N_WORKERS <- max(1L, parallelly::availableCores() - 1L)
 
@@ -223,6 +221,9 @@ executa_um_mc <- function(
 
         if (!ar_valido(phi_alt) || !ma_valido(theta_alt)) next
 
+        # Número de novas observações da Fase II
+        SEQ_COLAGENS <- c(1, round(N_INICIAL / 2), N_INICIAL - 1, N_INICIAL + round(N_INICIAL / 2))
+
         # Simula série alternativa (Fase II)
         # Observações que foram obtidas opós série de controle da Fase I
         serie1 <- tryCatch(
@@ -318,6 +319,7 @@ executa_um_mc <- function(
           theta_m <- mean(theta_boot)
 
           # Calcula T² para cada par (φ*, θ*) do bootstrap
+          # T²(x) = (x - mu_boot)' S^{-1} (x - mu_boot)
           t2_boot <- vapply(seq_along(phi_boot), function(i) {
             diff_b <- c(phi_boot[i], theta_boot[i]) - c(phi_m, theta_m)
             as.numeric(t(diff_b) %*% coef_vcov_inv %*% diff_b)
@@ -345,10 +347,10 @@ executa_um_mc <- function(
             n1 = sc,
             desvio_phi = desvio_phi,
             desvio_theta = desvio_theta,
+            numero_de_bootstrap_validos = length(t2_boot),
             fora_de_controle = esta_fora_de_controle,
             t2_sup = limite_sup,
-            t2_controle = t2_controle,
-            numero_de_bootstrap_validos = length(t2_boot)
+            t2_controle = t2_controle
           )
 
           idx_res <- idx_res + 1L
