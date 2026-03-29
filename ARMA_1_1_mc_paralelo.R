@@ -184,14 +184,17 @@ executa_um_mc <- function(
         if (is.null(serie1)) next
 
         for (sc in SEQ_COLAGENS) {
-          ## Verifica se o número de novas observações é maior que a série da Fase I
-          # if (sc >= N_INICIAL) break
-
           # Colagem: mantém os últimos da Fase I e os primeiros da Fase II
-          serie1_controle <- c(
-            tail(serie0, N_INICIAL - sc),
-            head(serie1, sc)
-          )
+          if (sc >= N_INICIAL) {
+            # Sem colagem
+            serie1_controle <- serie1[seq_len(N_INICIAL)]
+          } else {
+            serie1_controle <- c(
+              tail(serie0, N_INICIAL - sc),
+              head(serie1, sc)
+            )
+          }
+          stopifnot(length(serie1_controle) == N_INICIAL)
 
 
           ajuste1 <- fit_arma(serie1_controle, coef0$coef["ar1"], coef0$coef["ma1"])
@@ -227,10 +230,16 @@ executa_um_mc <- function(
             if (is.null(serie1_b)) next
 
             # Colagem para série bootstrap: mantém os últimos de Fase I e os primeiros de Fase II*
-            serie_colada_b <- c(
-              tail(serie0, N_INICIAL - sc),
-              head(serie1_b, sc)
-            )
+            if (sc >= N_INICIAL) {
+              # Sem colagem
+              serie_colada_b <- serie1_b[seq_len(N_INICIAL)]
+            } else {
+              serie_colada_b <- c(
+                tail(serie0, N_INICIAL - sc),
+                head(serie1_b, sc)
+              )
+            }
+            stopifnot(length(serie_colada_b) == N_INICIAL)
 
             ajuste_b <- fit_arma(serie_colada_b, coef0$coef["ar1"], coef0$coef["ma1"])
             if (is.null(ajuste_b) || !ajuste_b$convergiu) next
