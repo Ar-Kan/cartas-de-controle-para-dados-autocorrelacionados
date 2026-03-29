@@ -12,21 +12,20 @@ library(scales)
 
 set.seed(42)
 
-# ==============================
+######################################
 # PARÂMETROS
-# ==============================
 PHI_REAL_LISTA <- c(0.2)
 THETA_REAL_LISTA <- c(0.5)
 
-tamanhos_amostrais_iniciais <- c(100)
+TAMANHOS_AMOSTRAIS_INICIAIS <- c(100)
 
 MC <- 500
 B <- 500
 
-DESVIOS_PHI <- c(0) # , 0.2)
+DESVIOS_PHI <- c(0)
 DESVIOS_THETA <- c(0)
 
-SEQ_COLAGENS <- c(1, 25, 50, 75, 99, 150)
+SEQ_COLAGENS <- c(1, 50, 99, 150)
 
 N_WORKERS <- max(1L, parallelly::availableCores() - 1L)
 
@@ -118,21 +117,14 @@ bootstrap_coef_validos <- function(coef0, max_tentativas = 100L) {
 }
 
 executa_um_mc <- function(
-    mc,
-    PHI_REAL,
-    THETA_REAL,
-    tamanhos_amostrais_iniciais,
-    DESVIOS_PHI,
-    DESVIOS_THETA,
-    SEQ_COLAGENS,
-    B,
-    MC_TOTAL) {
-  # cat(sprintf("mc=%d | pid=%d\n", mc, Sys.getpid()))
+  mc,
+  PHI_REAL,
+  THETA_REAL) {
 
   resultados_mc <- list()
   idx_res <- 1L
 
-  for (N_INICIAL in tamanhos_amostrais_iniciais) {
+  for (N_INICIAL in TAMANHOS_AMOSTRAIS_INICIAIS) {
     # Simula série original sob controle (Fase I)
     # Observações nas quais que se assume que o sistema está em controle
     serie0 <- tryCatch(
@@ -277,11 +269,6 @@ executa_um_mc <- function(
     }
   }
 
-  # cat(sprintf(
-  #   "Monte Carlo: %d/%d (%.2f%%) | Φ0=%.2f | Θ0=%.2f | pid=%d\n",
-  #   mc, MC_TOTAL, 100 * mc / MC_TOTAL, PHI_REAL, THETA_REAL, Sys.getpid()
-  # ))
-
   if (length(resultados_mc) == 0L) {
     return(data.table())
   }
@@ -302,9 +289,8 @@ executa_um_mc_safe <- function(mc, ...) {
   )
 }
 
-# ==============================
+#####################################################################################
 # LOOP PRINCIPAL
-# ==============================
 
 message(sprintf(
   "Iniciando simulações ARMA(1,1) com %d iterações Monte Carlo...",
@@ -318,19 +304,18 @@ for (PHI_REAL in PHI_REAL_LISTA) {
   for (THETA_REAL in THETA_REAL_LISTA) {
     message(sprintf("Simulando para Φ0 = %.2f e Θ0 = %.2f", PHI_REAL, THETA_REAL))
 
-    res_lista <- future_lapply(
-      X = seq_len(MC),
-      FUN = executa_um_mc_safe,
-      future.seed = TRUE,
-      PHI_REAL = PHI_REAL,
-      THETA_REAL = THETA_REAL,
-      tamanhos_amostrais_iniciais = tamanhos_amostrais_iniciais,
-      DESVIOS_PHI = DESVIOS_PHI,
-      DESVIOS_THETA = DESVIOS_THETA,
-      SEQ_COLAGENS = SEQ_COLAGENS,
-      B = B,
-      MC_TOTAL = MC
-    )
+    res_lista <- progressr::with_progress({
+      p <- progressr::progressor(steps = MC)
+
+      future_lapply(
+        X = seq_len(MC),
+        FUN = executa_um_mc_safe,
+        future.seed = TRUE,
+        PHI_REAL = PHI_REAL,
+        THETA_REAL = THETA_REAL,
+        p = p
+      )
+    })
 
     erros <- Filter(function(x) is.data.table(x) && "erro_worker" %in% names(x), res_lista)
     if (length(erros) > 0L) {
@@ -349,6 +334,10 @@ for (PHI_REAL in PHI_REAL_LISTA) {
     }
   }
 }
+
+
+###############################################################
+# Resultados
 
 if (length(DADOS_OUT_LIST) == 0L) {
   stop("Nenhum resultado válido foi gerado.")
