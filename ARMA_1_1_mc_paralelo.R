@@ -9,6 +9,7 @@ library(MASS)
 library(future.apply)
 library(parallelly)
 library(scales)
+library(progressr)
 
 set.seed(42)
 
@@ -34,7 +35,11 @@ message(sprintf("Workers configurados: %d", N_WORKERS))
 # Windows: multisession = processos separados
 future::plan(future::multisession, workers = N_WORKERS)
 
-# ==============================
+# habilita barra de progresso
+progressr::handlers(global = TRUE)
+progressr::handlers("progress") # txtprogressbar
+
+########################################
 # FUNÇÕES AUXILIARES
 # ==============================
 
@@ -276,7 +281,11 @@ executa_um_mc <- function(
   rbindlist(resultados_mc, fill = TRUE)
 }
 
-executa_um_mc_safe <- function(mc, ...) {
+executa_um_mc_safe <- function(mc, ..., p = NULL) {
+  on.exit({
+    if (!is.null(p)) p(sprintf("MC %d/%d", mc, MC))
+  }, add = TRUE)
+
   tryCatch(
     executa_um_mc(mc = mc, ...),
     error = function(e) {
@@ -302,7 +311,7 @@ idx_global <- 1L
 
 for (PHI_REAL in PHI_REAL_LISTA) {
   for (THETA_REAL in THETA_REAL_LISTA) {
-    message(sprintf("Simulando para Φ0 = %.2f e Θ0 = %.2f", PHI_REAL, THETA_REAL))
+    message(sprintf("Simulando para Φ = %.2f e Θ = %.2f", PHI_REAL, THETA_REAL))
 
     res_lista <- progressr::with_progress({
       p <- progressr::progressor(steps = MC)
