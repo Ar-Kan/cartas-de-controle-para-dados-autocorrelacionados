@@ -443,28 +443,30 @@ print(head(DADOS_OUT))
 
 DADOS_OUT %>%
   mutate(
-    label = paste0(
-      "(", phi_alt, ", ", theta_alt, ")"
-    )
+    parametro_real = paste0("(", phi_real, ", ", theta_real, ")"),
+    label = paste0("(", phi_alt, ", ", theta_alt, ")")
   ) %>%
-  group_by(label, n0, n1) %>%
+  group_by(parametro_real, label, n0, n1) %>%
   summarise(proporcao = mean(fora_de_controle), .groups = "drop") %>%
   mutate(
-    x_label = n1 + n0,
     se = sqrt(proporcao * (1 - proporcao) / MC),
     ic_inf = pmax(0, proporcao - 1.96 * se),
     ic_sup = pmin(1, proporcao + 1.96 * se)
   ) %>%
-  ggplot(aes(x = x_label, y = proporcao, color = label)) +
-  geom_line(linewidth = 0.8) +
+  ggplot(aes(x = n1, y = proporcao, color = label, fill = label, group = label)) +
+  # geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup), width = 5, alpha = 0.6) +
+  geom_ribbon(aes(ymin = ic_inf, ymax = ic_sup), alpha = 0.15, color = NA) +
+  geom_line(linewidth = 0.9) +
+  geom_linerange(aes(ymin = ic_inf, ymax = ic_sup), linewidth = 0.7, alpha = 0.5) +
   geom_point(size = 2) +
-  geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup), width = 5, alpha = 0.6) +
+  # geom_pointrange(aes(ymin = ic_inf, ymax = ic_sup), linewidth = 0.5, fatten = 1.3) +
   geom_hline(yintercept = 0.05, linetype = "dotted") +
   labs(
     title = "Monte Carlo para ARMA(1,1)",
-    x = "Número de novas observações",
-    y = "Proporção Fora de Controle",
-    color = "Parâmetros (Φ; Θ)"
+    x = "Número de observações da Fase II",
+    y = "Proporção fora de controle",
+    color = "Parâmetros na Fase II (Φ; Θ)",
+    fill = "Parâmetros na Fase II (Φ; Θ)"
   ) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
   theme_minimal() +
@@ -473,12 +475,22 @@ DADOS_OUT %>%
     labels = scales::label_wrap(20),
     guide = guide_legend(nrow = 2)
   ) +
-  facet_wrap(~n0,
-             labeller = labeller(n0 = \(x) paste0("Tamanho Inicial: ", x)),
-             scales = "free_x"
+  scale_fill_brewer(
+    palette = "Dark2",
+    labels = scales::label_wrap(20),
+    guide = "none"
+  ) +
+  facet_wrap(
+    ~n0 + parametro_real,
+    labeller = labeller(
+      n0 = \(x) paste0("Tamanho Inicial: ", x),
+      parametro_real = \(x) paste0("Parâmetros na Fase I: ", x)
+    ),
+    scales = "free_x"
   ) +
   theme(
     legend.position = "bottom",
     plot.title = element_text(hjust = 0.5),
-    axis.text.x = element_text(angle = 45, hjust = 1)
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    text = element_text(size = 16)
   )
