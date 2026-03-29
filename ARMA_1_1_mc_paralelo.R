@@ -109,38 +109,86 @@ arma_coef <- function(modelo) {
   )
 }
 
-# Gera coeficientes ~ N(coef0$coef, coef0$vcov) e verifica se são válidos
-bootstrap_coef_validos <- function(coef0, max_tentativas = 100L) {
+
+# Gera coeficientes bootstrap válidos para ARMA(1,1) com dist N(coef0$coef, coef0$vcov)
+# Para séries de ordens maiores devemos usarmor PACF como o `stats::arima()` faz
+bootstrap_coef_validos <- function(coef0, eps = 1e-6) {
   Sigma <- coef0$vcov
+  beta0 <- coef0$coef
 
-  # A matriz é válida?
-  if (!is.matrix(Sigma) ||
-    any(!is.finite(Sigma))) {
+  # Validações
+  if (!is.matrix(Sigma) || any(!is.finite(Sigma))) {
     return(NULL)
   }
 
-  # É positiva definida?
-  # As vezes o modelo pode não convergir ou a matriz de covariância pode ser mal comportada
-  if (inherits(try(chol(Sigma), silent = TRUE), "try-error")) {
+  phi0 <- unname(beta0["ar1"])
+  theta0 <- unname(beta0["ma1"])
+
+  if (!is.finite(phi0) || !is.finite(theta0)) {
     return(NULL)
   }
 
-  for (i in seq_len(max_tentativas)) {
-    coef_star <- MASS::mvrnorm(1, mu = coef0$coef, Sigma = Sigma)
+  # proteção contra valores exatamente na fronteira
+  phi0 <- max(min(phi0, 1 - eps), -1 + eps)
+  theta0 <- max(min(theta0, 1 - eps), -1 + eps)
 
-    if (is.null(coef_star)) {
-      return(NULL)
-    }
+  # Média no espaço transformado
+  mu_u <- c(
+    ar1 = atanh(phi0),
+    ma1 = atanh(theta0)
+  )
 
-    phi_star <- unname(coef_star["ar1"])
-    theta_star <- unname(coef_star["ma1"])
+  # Método delta para aproximar a covariância no espaço transformado.
+  #
+  # Seja J a jacobiana de g avalidada em beta0, temos que se:
+  #   u = g(beta)
+  # então:
+  #   Var(u) ≈ J Var(beta) J'
+  # Onde:
+  #   g(phi) = atanh(phi) => d/dphi atanh(phi) = 1 / (1 - phi^2)
+  #   g(theta) = atanh(theta) => d/dtheta atanh(theta) = 1 / (1 - theta^2)
+  #
+  # Como a transformação é separada componente a componente,
+  # a jacobiana é diagonal.
+  J <- diag(c(
+    1 / (1 - phi0^2),
+    1 / (1 - theta0^2)
+  ))
 
-    if (ar_valido(phi_star) && ma_valido(theta_star)) {
-      return(c(phi_star = phi_star, theta_star = theta_star))
-    }
+  Sigma_u <- J %*% Sigma %*% J
+  Sigma_u <- as.matrix(Sigma_u)
+
+  rownames(Sigma_u) <- colnames(Sigma_u) <- c("ar1", "ma1")
+
+  # Valida matriz
+  if (any(!is.finite(Sigma_u))) {
+    return(NULL)
   }
 
-  NULL
+  if (inherits(try(chol(Sigma_u), silent = TRUE), "try-error")) {
+    return(NULL)
+  }
+
+  # Sorteia valores no espaço transformado
+  # U* ~ N(mu_u, Sigma_u)
+  u_star <- MASS::mvrnorm(1, mu = mu_u, Sigma = Sigma_u)
+
+  if (is.null(u_star) || any(!is.finite(u_star))) {
+    return(NULL)
+  }
+
+  # Volta ao espaço original
+  #   phi* = tanh(u_phi*)
+  #   theta* = tanh(u_theta*)
+  phi_star <- tanh(unname(u_star["ar1"]))
+  theta_star <- tanh(unname(u_star["ma1"]))
+
+  # Proteção final
+  if (!is.finite(phi_star) || !is.finite(theta_star)) {
+    return(NULL)
+  }
+
+  c(phi_star = phi_star, theta_star = theta_star)
 }
 
 executa_um_mc <- function(
@@ -426,8 +474,8 @@ DADOS_OUT %>%
     guide = guide_legend(nrow = 2)
   ) +
   facet_wrap(~n0,
-    labeller = labeller(n0 = \(x) paste0("Tamanho Inicial: ", x)),
-    scales = "free_x"
+             labeller = labeller(n0 = \(x) paste0("Tamanho Inicial: ", x)),
+             scales = "free_x"
   ) +
   theme(
     legend.position = "bottom",
