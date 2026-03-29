@@ -26,7 +26,7 @@ B <- 500
 DESVIOS_PHI <- c(0) # , 0.2)
 DESVIOS_THETA <- c(0)
 
-SEQ_COLAGENS <- c(1, 25, 50, 75, 99, 150) # , 200, 300, 400, 499)
+SEQ_COLAGENS <- c(1, 25, 50, 75, 99, 150)
 
 N_WORKERS <- max(1L, parallelly::availableCores() - 1L)
 
@@ -133,7 +133,7 @@ executa_um_mc <- function(
   idx_res <- 1L
 
   for (N_INICIAL in tamanhos_amostrais_iniciais) {
-    # Simula série original sob controle (Fase 1)
+    # Simula série original sob controle (Fase I)
     # Observações nas quais que se assume que o sistema está em controle
     serie0 <- tryCatch(
       simula_arma(N_INICIAL, PHI_REAL, THETA_REAL),
@@ -149,25 +149,25 @@ executa_um_mc <- function(
 
     for (desvio_phi in DESVIOS_PHI) {
       for (desvio_theta in DESVIOS_THETA) {
-        # Altera os parâmetros reais para simular a série alternativa (Fase 2)
+        # Altera os parâmetros reais para simular a série alternativa (Fase II)
         phi_alt <- PHI_REAL + desvio_phi
         theta_alt <- THETA_REAL + desvio_theta
 
         if (!ar_valido(phi_alt) || !ma_valido(theta_alt)) next
 
-        # Simula série alternativa (Fase 2)
-        # Observações que foram obtidas opós série de controle da Fase 1
+        # Simula série alternativa (Fase II)
+        # Observações que foram obtidas opós série de controle da Fase I
         serie1 <- tryCatch(
-          simula_arma(N_INICIAL, phi_alt, theta_alt),
+          simula_arma(max(SEQ_COLAGENS), phi_alt, theta_alt),
           error = function(e) NULL
         )
         if (is.null(serie1)) next
 
         for (sc in SEQ_COLAGENS) {
-          # Verifica se o número de novas observações é maior que a série da Fase 1
+          ## Verifica se o número de novas observações é maior que a série da Fase I
           # if (sc >= N_INICIAL) break
 
-          # Colagem: mantém os últimos da Fase 1 e os primeiros da Fase 2
+          # Colagem: mantém os últimos da Fase I e os primeiros da Fase II
           serie1_controle <- c(
             tail(serie0, N_INICIAL - sc),
             head(serie1, sc)
@@ -197,14 +197,14 @@ executa_um_mc <- function(
             phi_star <- unname(coef_star["phi_star"])
             theta_star <- unname(coef_star["theta_star"])
 
-            # Simula série Fase 2*
+            # Simula série Fase II*
             serie1_b <- tryCatch(
               simula_arma(N_INICIAL, phi_star, theta_star),
               error = function(e) NULL
             )
             if (is.null(serie1_b)) next
 
-            # Colagem para série bootstrap: mantém os últimos de Fase 1 e os primeiros de Fase 2*
+            # Colagem para série bootstrap: mantém os últimos de Fase I e os primeiros de Fase II*
             serie_colada_b <- c(
               tail(serie0, N_INICIAL - sc),
               head(serie1_b, sc)
@@ -229,8 +229,7 @@ executa_um_mc <- function(
           if (length(phi_boot) < 5L) next
 
           # Matriz da informação de Fisher da série de controle
-          # coef_vcov <- fit1_controle$var.coef
-          coef_vcov <- coef0$vcov
+          coef_vcov <- fit1_controle$var.coef
 
           coef_vcov_inv <- tryCatch(solve(coef_vcov), error = function(e) NULL)
           if (is.null(coef_vcov_inv)) next
@@ -402,27 +401,3 @@ DADOS_OUT %>%
     plot.title = element_text(hjust = 0.5),
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
-
-DADOS_OUT %>%
-  mutate(
-    label = paste0(
-      "(", phi_alt, ", ", theta_alt, ")"
-    )
-  ) %>%
-  group_by(label, n0, n1) %>%
-  summarise(
-    t2_sup_med = mean(t2_sup, na.rm = TRUE),
-    t2_controle_med = mean(t2_controle, na.rm = TRUE),
-    t2_dif = t2_sup_med - t2_controle_med,
-    .groups = "drop"
-  ) %>%
-  ggplot(aes(x = n1, y = t2_dif, color = label)) +
-  geom_line(linewidth = 0.8) +
-  geom_point(size = 2) +
-  labs(
-    title = "Diferença entre T² de Controle e Limite Superior do Bootstrap",
-    x = "Número de novas observações",
-    y = "T² Sup. Bootstrap - T² Controle",
-    color = "Parâmetros (Φ; Θ)"
-  ) +
-  theme_minimal()
