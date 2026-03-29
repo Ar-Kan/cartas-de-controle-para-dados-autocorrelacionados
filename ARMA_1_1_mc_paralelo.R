@@ -41,28 +41,50 @@ progressr::handlers("progress") # txtprogressbar
 
 ########################################
 # FUNÇÕES AUXILIARES
-# ==============================
 
-# Simula ARMA(1,1)
-simula_arma <- function(n, phi, theta, sd = NULL) {
-  args <- list(
+# Simula ARMA(1,1) com burn-in de 200
+simula_arma <- function(n, phi, theta) {
+  obs <- arima.sim(
     n = 200 + n,
     model = list(ar = phi, ma = theta)
   )
-  if (!is.null(sd)) args$sd <- sd
-  obs <- do.call(arima.sim, args)
   tail(obs, n)
 }
 
 # Ajusta ARMA(1,1)
-fit_arma <- function(serie) {
-  tryCatch(
-    arima(
-      serie,
-      order = c(1, 0, 1),
-      include.mean = FALSE,
+fit_arma <- function(serie, phi = NULL, theta = NULL) {
+  aviso <- NULL
+
+  fit <- tryCatch(
+    withCallingHandlers(
+      arima(
+        serie,
+        order = c(1, 0, 1),
+        include.mean = FALSE,
+        # Usa uma parametrização alternativa para garantir estacionaridade dos
+        # termos AR, e trata a invertibilidade dos MA depois da otimização (invertibility enforcement).
+        # NOTA: Não funciona com o método `CSS` puro
+        transform.pars = TRUE,
+        # `CSS-ML`: usa CSS para dar um chute inicial e refina com verossimilhança
+        method = "CSS-ML",
+        init = c(ar1 = phi, ma1 = theta),
+        optim.method = "BFGS",
+        optim.control = list(maxit = 1000, reltol = 1e-10)
+      ),
+      warning = function(w) {
+        aviso <<- conditionMessage(w)
+        invokeRestart("muffleWarning")
+      }
     ),
-    error = function(e) NA
+    error = function(e) NULL
+  )
+
+  if (is.null(fit)) return(NULL)
+
+  list(
+    fit = fit,
+    warning = aviso,
+    convergiu = is.null(aviso)
   )
 }
 
@@ -138,8 +160,9 @@ executa_um_mc <- function(
     )
     if (is.null(serie0)) next
 
-    fit0 <- fit_arma(serie0)
-    if (length(fit0) == 1 && is.na(fit0)) next
+    ajuste0 <- fit_arma(serie0)
+    if (is.null(ajuste0) || !ajuste0$convergiu) next
+    fit0 <- ajuste0$fit
 
     coef0 <- tryCatch(arma_coef(fit0), error = function(e) NULL)
     if (is.null(coef0)) next
@@ -170,8 +193,10 @@ executa_um_mc <- function(
             head(serie1, sc)
           )
 
-          fit1_controle <- fit_arma(serie1_controle)
-          if (length(fit1_controle) == 1 && is.na(fit1_controle)) next
+
+          ajuste1 <- fit_arma(serie1_controle, coef0$coef["ar1"], coef0$coef["ma1"])
+          if (is.null(ajuste1) || !ajuste1$convergiu) next
+          fit1_controle <- ajuste1$fit
 
           coef1_controle <- tryCatch(coef(fit1_controle), error = function(e) NULL)
           if (is.null(coef1_controle)) next
@@ -207,8 +232,9 @@ executa_um_mc <- function(
               head(serie1_b, sc)
             )
 
-            fit_b <- fit_arma(serie_colada_b)
-            if (length(fit_b) == 1 && is.na(fit_b)) next
+            ajuste_b <- fit_arma(serie_colada_b, coef0$coef["ar1"], coef0$coef["ma1"])
+            if (is.null(ajuste_b) || !ajuste_b$convergiu) next
+            fit_b <- ajuste_b$fit
 
             coef_b <- tryCatch(coef(fit_b), error = function(e) NULL)
             if (is.null(coef_b)) next
