@@ -30,6 +30,10 @@ B <- 800
 DESVIOS_PHI <- c(0, 0.2)
 DESVIOS_THETA <- c(0, -0.2)
 
+# Usa uma parametrização para garantir a validade de φ e θ amostrados durante o bootstrap.
+# Também define `transform.pars = TRUE` no ajuste do modelo por meio de `stats::arima()``.
+USAR_TRANSFORMACAO_NO_ESPACO_PARAMETRICO <- TRUE
+
 N_WORKERS <- max(1L, parallelly::availableCores() - 1L)
 
 message(sprintf("Workers configurados: %d", N_WORKERS))
@@ -39,7 +43,7 @@ future::plan(future::multisession, workers = N_WORKERS)
 
 # habilita barra de progresso
 progressr::handlers(global = TRUE)
-progressr::handlers("progress") # txtprogressbar
+progressr::handlers("progress")
 
 ########################################
 # FUNÇÕES AUXILIARES
@@ -50,6 +54,7 @@ simula_arma <- function(n, phi, theta) {
     n = 200 + n,
     model = list(ar = phi, ma = theta)
   )
+  # Retorna as últimas n observações
   tail(obs, n)
 }
 
@@ -66,7 +71,7 @@ fit_arma <- function(serie, phi = NULL, theta = NULL) {
         # Usa uma parametrização alternativa para garantir estacionaridade dos
         # termos AR, e trata a invertibilidade dos MA depois da otimização (invertibility enforcement).
         # NOTA: Não funciona com o método `CSS` puro
-        transform.pars = TRUE,
+        transform.pars = USAR_TRANSFORMACAO_NO_ESPACO_PARAMETRICO,
         # `CSS-ML`: usa CSS para dar um chute inicial e refina com verossimilhança
         method = "CSS-ML",
         init = c(ar1 = phi, ma1 = theta),
@@ -269,11 +274,27 @@ executa_um_mc <- function(
 
           for (b in seq_len(B)) {
             # Gera coeficientes e adiciona variabilidade
-            coef_star <- bootstrap_coef_validos(coef0)
-            if (is.null(coef_star)) next
+            if (USAR_TRANSFORMACAO_NO_ESPACO_PARAMETRICO) {
+              # Gera coeficientes bootstrap válidos para ARMA(1,1) com dist N(coef0$coef, coef0$vcov)
+              coef_star <- bootstrap_coef_validos(coef0)
+              if (is.null(coef_star)) next
 
-            phi_star <- unname(coef_star["phi_star"])
-            theta_star <- unname(coef_star["theta_star"])
+              phi_star <- unname(coef_star["phi_star"])
+              theta_star <- unname(coef_star["theta_star"])
+            } else {
+              # Gera coeficientes bootstrap sem restrição, o que pode levar a valores inválidos de φ* e θ*.
+              coef_star <- tryCatch(
+                MASS::mvrnorm(1, mu = coef0$coef, Sigma = coef0$vcov),
+                error = function(e) NULL
+              )
+              if (is.null(coef_star) || any(!is.finite(coef_star))) next
+
+              phi_star <- unname(coef_star["ar1"])
+              theta_star <- unname(coef_star["ma1"])
+
+              # Valida os coeficientes bootstrap gerados
+              if (!ar_valido(phi_star) || !ma_valido(theta_star)) next
+            }
 
             # Simula série Fase II*
             serie1_b <- tryCatch(
@@ -311,7 +332,12 @@ executa_um_mc <- function(
           phi_boot <- phi_boot[validos]
           theta_boot <- theta_boot[validos]
 
-          if (length(phi_boot) < 5L) next
+          if (length(phi_boot) < B * 0.9) {
+            warning(sprintf(
+              "Número de bootstrap válidos (%d) é menor que 90%% do total (%d) para MC %d, n0 %d, n1 %d, desvio_phi %.2f, desvio_theta %.2f. Resultados podem ser instáveis.",
+              length(phi_boot), B, mc, N_INICIAL, sc, desvio_phi, desvio_theta
+            ))
+          }
 
           # Matriz da informação de Fisher da série de controle
           amostra_vcov <- fit1_controle$var.coef
