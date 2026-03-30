@@ -20,8 +20,12 @@ THETA_REAL_LISTA <- c(0.5)
 
 TAMANHOS_AMOSTRAIS_INICIAIS <- c(100, 1000)
 
-MC <- 500
-B <- 500
+SEQ_NOVAS_OBSERVACOES <- function(n_inicial) {
+  c(1, round(n_inicial / 2), n_inicial - 1, n_inicial + round(n_inicial / 2))
+}
+
+MC <- 1000
+B <- 800
 
 DESVIOS_PHI <- c(0, 0.2)
 DESVIOS_THETA <- c(0, -0.2)
@@ -222,7 +226,7 @@ executa_um_mc <- function(
         if (!ar_valido(phi_alt) || !ma_valido(theta_alt)) next
 
         # Número de novas observações da Fase II
-        SEQ_COLAGENS <- c(1, round(N_INICIAL / 2), N_INICIAL - 1, N_INICIAL + round(N_INICIAL / 2))
+        SEQ_COLAGENS <- SEQ_NOVAS_OBSERVACOES(N_INICIAL)
 
         # Simula série alternativa (Fase II)
         # Observações que foram obtidas opós série de controle da Fase I
@@ -253,9 +257,9 @@ executa_um_mc <- function(
           coef1_controle <- tryCatch(coef(fit1_controle), error = function(e) NULL)
           if (is.null(coef1_controle)) next
 
-          phi_hat <- unname(coef1_controle["ar1"])
-          theta_hat <- unname(coef1_controle["ma1"])
-          if (!is.finite(phi_hat) || !is.finite(theta_hat)) next
+          coef1_phi <- unname(coef1_controle["ar1"])
+          coef1_theta <- unname(coef1_controle["ma1"])
+          if (!is.finite(coef1_phi) || !is.finite(coef1_theta)) next
 
           # Bootstrap para obter distribuição de T² sob H0 (sistema em controle)
           # COMEÇO DO BOOTSTRAP
@@ -310,32 +314,36 @@ executa_um_mc <- function(
           if (length(phi_boot) < 5L) next
 
           # Matriz da informação de Fisher da série de controle
-          coef_vcov <- fit1_controle$var.coef
+          amostra_vcov <- fit1_controle$var.coef
 
-          coef_vcov_inv <- tryCatch(solve(coef_vcov), error = function(e) NULL)
-          if (is.null(coef_vcov_inv)) next
+          amostra_vcov_inv <- tryCatch(solve(amostra_vcov), error = function(e) NULL)
+          if (is.null(amostra_vcov_inv)) next
 
-          phi_m <- mean(phi_boot)
-          theta_m <- mean(theta_boot)
+          phi_boot_media <- mean(phi_boot)
+          theta_boot_media <- mean(theta_boot)
 
           # Calcula T² para cada par (φ*, θ*) do bootstrap
           # T²(x) = (x - mu_boot)' S^{-1} (x - mu_boot)
-          t2_boot <- vapply(seq_along(phi_boot), function(i) {
-            diff_b <- c(phi_boot[i], theta_boot[i]) - c(phi_m, theta_m)
-            as.numeric(t(diff_b) %*% coef_vcov_inv %*% diff_b)
-          }, numeric(1))
+          t2_boot <- vapply(
+            seq_along(phi_boot),
+            function(i) {
+              diff_b <- c(phi_boot[i], theta_boot[i]) - c(phi_boot_media, theta_boot_media)
+              as.numeric(t(diff_b) %*% amostra_vcov_inv %*% diff_b)
+            },
+            numeric(1)
+          )
 
-          # Obtém quantis de T² para o intervalo de confiança
-          limite_sup <- quantile(t2_boot, probs = 0.95, na.rm = TRUE, names = FALSE)
+          # Obtém o limite de controle q95(T²)
+          t2_limite <- quantile(t2_boot, probs = 0.95, na.rm = TRUE, names = FALSE)
 
-          diff_controle <- c(phi_hat, theta_hat) - c(phi_m, theta_m)
+          diff_controle <- c(coef1_phi, coef1_theta) - c(phi_boot_media, theta_boot_media)
           t2_controle <- as.numeric(
             t(diff_controle) %*%
-              coef_vcov_inv %*%
+              amostra_vcov_inv %*%
               diff_controle
           )
 
-          esta_fora_de_controle <- t2_controle > limite_sup
+          esta_fora_de_controle <- t2_controle > t2_limite
 
           resultados_mc[[idx_res]] <- data.table(
             mc = mc,
@@ -349,7 +357,7 @@ executa_um_mc <- function(
             desvio_theta = desvio_theta,
             numero_de_bootstrap_validos = length(t2_boot),
             fora_de_controle = esta_fora_de_controle,
-            t2_sup = limite_sup,
+            t2_limite = t2_limite,
             t2_controle = t2_controle
           )
 
@@ -465,6 +473,7 @@ DADOS_OUT %>%
   geom_hline(yintercept = 0.05, linetype = "dotted") +
   labs(
     title = "Monte Carlo para ARMA(1,1)",
+    subtitle = sprintf("%d iterações Monte Carlo, %d bootstrap por iteração", MC, B),
     x = "Número de observações da Fase II",
     y = "Proporção fora de controle",
     color = "Parâmetros na Fase II (Φ; Θ)",
@@ -493,6 +502,7 @@ DADOS_OUT %>%
   theme(
     legend.position = "bottom",
     plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
     axis.text.x = element_text(angle = 45, hjust = 1),
     text = element_text(size = 16)
   )
