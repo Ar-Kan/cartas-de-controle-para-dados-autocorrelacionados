@@ -30,10 +30,6 @@ B <- 800
 DESVIOS_PHI <- c(0, 0.2)
 DESVIOS_THETA <- c(0, -0.2)
 
-# Usa uma parametrização para garantir a validade de φ e θ amostrados durante o bootstrap.
-# Também define `transform.pars = TRUE` no ajuste do modelo por meio de `stats::arima()``.
-USAR_TRANSFORMACAO_NO_ESPACO_PARAMETRICO <- TRUE
-
 N_WORKERS <- max(1L, parallelly::availableCores() - 1L)
 
 message(sprintf("Workers configurados: %d", N_WORKERS))
@@ -68,10 +64,6 @@ fit_arma <- function(serie, phi = NULL, theta = NULL) {
         serie,
         order = c(1, 0, 1),
         include.mean = FALSE,
-        # Usa uma parametrização alternativa para garantir estacionaridade dos
-        # termos AR, e trata a invertibilidade dos MA depois da otimização (invertibility enforcement).
-        # NOTA: Não funciona com o método `CSS` puro
-        transform.pars = USAR_TRANSFORMACAO_NO_ESPACO_PARAMETRICO,
         # `CSS-ML`: usa CSS para dar um chute inicial e refina com verossimilhança
         method = "CSS-ML",
         init = c(ar1 = phi, ma1 = theta),
@@ -116,86 +108,71 @@ arma_coef <- function(modelo) {
   )
 }
 
+executa_bootstrap <- function(
+  serie0,
+  coef0,
+  n_inicial,
+  sc
+) {
+  phi_boot <- rep(NA_real_, B)
+  theta_boot <- rep(NA_real_, B)
 
-# Gera coeficientes bootstrap válidos para ARMA(1,1) com dist N(coef0$coef, coef0$vcov)
-# Para séries de ordens maiores devemos usarmor PACF como o `stats::arima()` faz
-bootstrap_coef_validos <- function(coef0, eps = 1e-6) {
-  Sigma <- coef0$vcov
-  beta0 <- coef0$coef
+  for (b in seq_len(B)) {
+    # Gera coeficientes bootstrap sem restrição, o que pode levar a valores inválidos de φ* e θ*.
+    coef_star <- tryCatch(
+      MASS::mvrnorm(1, mu = coef0$coef, Sigma = coef0$vcov),
+      error = function(e) NULL
+    )
+    if (is.null(coef_star) || any(!is.finite(coef_star))) next
 
-  # Validações
-  if (!is.matrix(Sigma) || any(!is.finite(Sigma))) {
-    return(NULL)
+    phi_star <- unname(coef_star["ar1"])
+    theta_star <- unname(coef_star["ma1"])
+
+    # Valida os coeficientes bootstrap gerados
+    if (!ar_valido(phi_star) || !ma_valido(theta_star)) next
+
+    # Simula série Fase II*
+    serie1_b <- tryCatch(
+      simula_arma(n_inicial, phi_star, theta_star),
+      error = function(e) NULL
+    )
+    if (is.null(serie1_b)) next
+
+    # Colagem para série bootstrap: mantém os últimos de Fase I e os primeiros de Fase II*
+    if (sc >= n_inicial) {
+      # Sem colagem
+      serie_colada_b <- serie1_b[seq_len(n_inicial)]
+    } else {
+      serie_colada_b <- c(
+        tail(serie0, n_inicial - sc),
+        head(serie1_b, sc)
+      )
+    }
+    stopifnot(length(serie_colada_b) == n_inicial)
+
+    ajuste_b <- fit_arma(serie_colada_b, coef0$coef["ar1"], coef0$coef["ma1"])
+    if (is.null(ajuste_b) || !ajuste_b$convergiu) next
+    fit_b <- ajuste_b$fit
+
+    coef_b <- tryCatch(coef(fit_b), error = function(e) NULL)
+    if (is.null(coef_b)) next
+
+    phi_boot[b] <- unname(coef_b["ar1"])
+    theta_boot[b] <- unname(coef_b["ma1"])
   }
 
-  phi0 <- unname(beta0["ar1"])
-  theta0 <- unname(beta0["ma1"])
+  validos <- is.finite(phi_boot) & is.finite(theta_boot)
+  phi_boot <- phi_boot[validos]
+  theta_boot <- theta_boot[validos]
 
-  if (!is.finite(phi0) || !is.finite(theta0)) {
-    return(NULL)
+  if (length(phi_boot) < B * 0.9) {
+    warning(sprintf(
+      "Número de bootstrap válidos (%d) é menor que 90%% do total (%d) para MC %d, n0 %d, n1 %d, desvio_phi %.2f, desvio_theta %.2f. Resultados podem ser instáveis.",
+      length(phi_boot), B, mc, n_inicial, sc, desvio_phi, desvio_theta
+    ))
   }
 
-  # proteção contra valores exatamente na fronteira
-  phi0 <- max(min(phi0, 1 - eps), -1 + eps)
-  theta0 <- max(min(theta0, 1 - eps), -1 + eps)
-
-  # Média no espaço transformado
-  mu_u <- c(
-    ar1 = atanh(phi0),
-    ma1 = atanh(theta0)
-  )
-
-  # Método delta para aproximar a covariância no espaço transformado.
-  #
-  # Seja J a jacobiana de g avalidada em beta0, temos que se:
-  #   u = g(beta)
-  # então:
-  #   Var(u) ≈ J Var(beta) J'
-  # Onde:
-  #   g(phi) = atanh(phi) => d/dphi atanh(phi) = 1 / (1 - phi^2)
-  #   g(theta) = atanh(theta) => d/dtheta atanh(theta) = 1 / (1 - theta^2)
-  #
-  # Como a transformação é separada componente a componente,
-  # a jacobiana é diagonal.
-  J <- diag(c(
-    1 / (1 - phi0^2),
-    1 / (1 - theta0^2)
-  ))
-
-  Sigma_u <- J %*% Sigma %*% J
-  Sigma_u <- as.matrix(Sigma_u)
-
-  rownames(Sigma_u) <- colnames(Sigma_u) <- c("ar1", "ma1")
-
-  # Valida matriz
-  if (any(!is.finite(Sigma_u))) {
-    return(NULL)
-  }
-
-  if (inherits(try(chol(Sigma_u), silent = TRUE), "try-error")) {
-    return(NULL)
-  }
-
-  # Sorteia valores no espaço transformado
-  # U* ~ N(mu_u, Sigma_u)
-  u_star <- MASS::mvrnorm(1, mu = mu_u, Sigma = Sigma_u)
-
-  if (is.null(u_star) || any(!is.finite(u_star))) {
-    return(NULL)
-  }
-
-  # Volta ao espaço original
-  #   phi* = tanh(u_phi*)
-  #   theta* = tanh(u_theta*)
-  phi_star <- tanh(unname(u_star["ar1"]))
-  theta_star <- tanh(unname(u_star["ma1"]))
-
-  # Proteção final
-  if (!is.finite(phi_star) || !is.finite(theta_star)) {
-    return(NULL)
-  }
-
-  c(phi_star = phi_star, theta_star = theta_star)
+  list(phi_boot = phi_boot, theta_boot = theta_boot)
 }
 
 executa_um_mc <- function(
@@ -267,77 +244,7 @@ executa_um_mc <- function(
           if (!is.finite(coef1_phi) || !is.finite(coef1_theta)) next
 
           # Bootstrap para obter distribuição de T² sob H0 (sistema em controle)
-          # COMEÇO DO BOOTSTRAP
-
-          phi_boot <- rep(NA_real_, B)
-          theta_boot <- rep(NA_real_, B)
-
-          for (b in seq_len(B)) {
-            # Gera coeficientes e adiciona variabilidade
-            if (USAR_TRANSFORMACAO_NO_ESPACO_PARAMETRICO) {
-              # Gera coeficientes bootstrap válidos para ARMA(1,1) com dist N(coef0$coef, coef0$vcov)
-              coef_star <- bootstrap_coef_validos(coef0)
-              if (is.null(coef_star)) next
-
-              phi_star <- unname(coef_star["phi_star"])
-              theta_star <- unname(coef_star["theta_star"])
-            } else {
-              # Gera coeficientes bootstrap sem restrição, o que pode levar a valores inválidos de φ* e θ*.
-              coef_star <- tryCatch(
-                MASS::mvrnorm(1, mu = coef0$coef, Sigma = coef0$vcov),
-                error = function(e) NULL
-              )
-              if (is.null(coef_star) || any(!is.finite(coef_star))) next
-
-              phi_star <- unname(coef_star["ar1"])
-              theta_star <- unname(coef_star["ma1"])
-
-              # Valida os coeficientes bootstrap gerados
-              if (!ar_valido(phi_star) || !ma_valido(theta_star)) next
-            }
-
-            # Simula série Fase II*
-            serie1_b <- tryCatch(
-              simula_arma(N_INICIAL, phi_star, theta_star),
-              error = function(e) NULL
-            )
-            if (is.null(serie1_b)) next
-
-            # Colagem para série bootstrap: mantém os últimos de Fase I e os primeiros de Fase II*
-            if (sc >= N_INICIAL) {
-              # Sem colagem
-              serie_colada_b <- serie1_b[seq_len(N_INICIAL)]
-            } else {
-              serie_colada_b <- c(
-                tail(serie0, N_INICIAL - sc),
-                head(serie1_b, sc)
-              )
-            }
-            stopifnot(length(serie_colada_b) == N_INICIAL)
-
-            ajuste_b <- fit_arma(serie_colada_b, coef0$coef["ar1"], coef0$coef["ma1"])
-            if (is.null(ajuste_b) || !ajuste_b$convergiu) next
-            fit_b <- ajuste_b$fit
-
-            coef_b <- tryCatch(coef(fit_b), error = function(e) NULL)
-            if (is.null(coef_b)) next
-
-            phi_boot[b] <- unname(coef_b["ar1"])
-            theta_boot[b] <- unname(coef_b["ma1"])
-          }
-
-          # FIM DO BOOTSTRAP
-
-          validos <- is.finite(phi_boot) & is.finite(theta_boot)
-          phi_boot <- phi_boot[validos]
-          theta_boot <- theta_boot[validos]
-
-          if (length(phi_boot) < B * 0.9) {
-            warning(sprintf(
-              "Número de bootstrap válidos (%d) é menor que 90%% do total (%d) para MC %d, n0 %d, n1 %d, desvio_phi %.2f, desvio_theta %.2f. Resultados podem ser instáveis.",
-              length(phi_boot), B, mc, N_INICIAL, sc, desvio_phi, desvio_theta
-            ))
-          }
+          boot <- executa_bootstrap(serie0 = serie0, coef0 = coef0, n_inicial = N_INICIAL, sc = sc)
 
           # Matriz da informação de Fisher da série de controle
           amostra_vcov <- fit1_controle$var.coef
@@ -345,15 +252,15 @@ executa_um_mc <- function(
           amostra_vcov_inv <- tryCatch(solve(amostra_vcov), error = function(e) NULL)
           if (is.null(amostra_vcov_inv)) next
 
-          phi_boot_media <- mean(phi_boot)
-          theta_boot_media <- mean(theta_boot)
+          phi_boot_media <- mean(boot$phi_boot)
+          theta_boot_media <- mean(boot$theta_boot)
 
           # Calcula T² para cada par (φ*, θ*) do bootstrap
           # T²(x) = (x - mu_boot)' S^{-1} (x - mu_boot)
           t2_boot <- vapply(
-            seq_along(phi_boot),
+            seq_along(boot$phi_boot),
             function(i) {
-              diff_b <- c(phi_boot[i], theta_boot[i]) - c(phi_boot_media, theta_boot_media)
+              diff_b <- c(boot$phi_boot[i], boot$theta_boot[i]) - c(phi_boot_media, theta_boot_media)
               as.numeric(t(diff_b) %*% amostra_vcov_inv %*% diff_b)
             },
             numeric(1)
