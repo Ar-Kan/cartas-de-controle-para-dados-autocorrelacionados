@@ -6,12 +6,12 @@ library(dplyr)
 library(scales)
 
 sem_transformacao <- read_delim(
-  "estudos/transformacao-no-espaco-amostral/controle-sem-transformacao.csv",
+  "estudos/transformacao-no-espaco-parametrico/controle-sem-transformacao.csv",
   delim = ";"
 )
 
 com_transformacao <- read_delim(
-  "estudos/transformacao-no-espaco-amostral/controle-com-transformacao.csv",
+  "estudos/transformacao-no-espaco-parametrico/controle-com-transformacao.csv",
   delim = ";"
 )
 
