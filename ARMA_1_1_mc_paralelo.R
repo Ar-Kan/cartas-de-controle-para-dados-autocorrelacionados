@@ -1,6 +1,6 @@
 rm(list = ls())
-graphics.off()
 options(error = NULL)
+Sys.setlocale("LC_CTYPE", "Portuguese_Brazil.utf8")
 
 library(ggplot2)
 library(dplyr)
@@ -12,6 +12,22 @@ library(scales)
 library(progressr)
 
 set.seed(42)
+
+#########################################
+# Cofigurações
+N_WORKERS <- max(1L, parallelly::availableCores() - 1L)
+
+message(sprintf("Workers configurados: %d", N_WORKERS))
+
+# Windows: multisession = processos separados
+future::plan(future::multisession, workers = N_WORKERS)
+
+# habilita barra de progresso
+progressr::handlers("progress")
+
+# Usa uma parametrização para garantir a validade de φ e θ amostrados durante o bootstrap.
+# Também define `transform.pars = TRUE` no ajuste do modelo por meio de `stats::arima()``.
+USAR_TRANSFORMACAO_NO_ESPACO_PARAMETRICO <- FALSE
 
 ######################################
 # PARÂMETROS
@@ -29,17 +45,6 @@ B <- 800
 
 DESVIOS_PHI <- c(0, 0.2)
 DESVIOS_THETA <- c(0, -0.2)
-
-N_WORKERS <- max(1L, parallelly::availableCores() - 1L)
-
-message(sprintf("Workers configurados: %d", N_WORKERS))
-
-# Windows: multisession = processos separados
-future::plan(future::multisession, workers = N_WORKERS)
-
-# habilita barra de progresso
-progressr::handlers(global = TRUE)
-progressr::handlers("progress")
 
 ########################################
 # FUNÇÕES AUXILIARES
@@ -64,6 +69,10 @@ fit_arma <- function(serie, phi = NULL, theta = NULL) {
         serie,
         order = c(1, 0, 1),
         include.mean = FALSE,
+        # Usa uma parametrização alternativa para garantir estacionaridade dos
+        # termos AR, e trata a invertibilidade dos MA depois da otimização (invertibility enforcement).
+        # NOTA: Não funciona com o método `CSS` puro
+        transform.pars = USAR_TRANSFORMACAO_NO_ESPACO_PARAMETRICO,
         # `CSS-ML`: usa CSS para dar um chute inicial e refina com verossimilhança
         method = "CSS-ML",
         init = c(ar1 = phi, ma1 = theta),
@@ -108,6 +117,93 @@ arma_coef <- function(modelo) {
   )
 }
 
+
+# Gera coeficientes bootstrap válidos para ARMA(1,1) com dist N(coef, matriz_vcov).
+# Para séries de ordens maiores devemos usarmor PACF como o `stats::arima()` faz.
+#
+# A operação é feita em 4 etapas:
+# 1. Transformação para o espaço onde os parâmetros são irrestritos (usando atanh para mapear (-1, 1) para ℝ).
+# 2. Ajuste da covariância no espaço transformado usando o método delta.
+# 3. Sorteio de um novo vetor de parâmetros no espaço transformado.
+# 4. Transformação de volta para o espaço original usando tanh.
+#
+# Método delta para aproximar a covariância no espaço transformado.
+# Seja J a jacobiana de g avalidada em coef, temos que se:
+#   u = g(coef)
+# então:
+#   Var(u) ~= J Var(coef) J'
+# Onde:
+#   g(phi) = atanh(phi) => d/dphi atanh(phi) = 1 / (1 - phi^2)
+#   g(theta) = atanh(theta) => d/dtheta atanh(theta) = 1 / (1 - theta^2)
+#
+# Como a transformação é separada componente a componente,
+# a jacobiana é diagonal.
+bootstrap_coef_validos <- function(coef, matriz_vcov, eps = 1e-6) {
+  # Validações
+  if (!is.matrix(matriz_vcov) || any(!is.finite(matriz_vcov))) {
+    return(NULL)
+  }
+
+  phi0 <- unname(coef["ar1"])
+  theta0 <- unname(coef["ma1"])
+
+  if (!is.finite(phi0) || !is.finite(theta0)) {
+    return(NULL)
+  }
+
+  # proteção contra valores exatamente na fronteira
+  phi0 <- max(min(phi0, 1 - eps), -1 + eps)
+  theta0 <- max(min(theta0, 1 - eps), -1 + eps)
+
+  # Média no espaço transformado
+  mu_u <- c(
+    ar1 = atanh(phi0),
+    ma1 = atanh(theta0)
+  )
+
+  # Jacobiana da transformação g no ponto coef
+  J <- diag(c(
+    1 / (1 - phi0^2),
+    1 / (1 - theta0^2)
+  ))
+
+  Sigma_u <- J %*% matriz_vcov %*% t(J)
+  Sigma_u <- as.matrix(Sigma_u)
+
+  rownames(Sigma_u) <- colnames(Sigma_u) <- c("ar1", "ma1")
+
+  # Valida matriz
+  if (any(!is.finite(Sigma_u))) {
+    return(NULL)
+  }
+
+  if (inherits(try(chol(Sigma_u), silent = TRUE), "try-error")) {
+    return(NULL)
+  }
+
+  # Sorteia valores no espaço transformado
+  # U* ~ N(mu_u, Sigma_u)
+  u_star <- MASS::mvrnorm(1, mu = mu_u, Sigma = Sigma_u)
+
+  if (is.null(u_star) || any(!is.finite(u_star))) {
+    return(NULL)
+  }
+
+  # Volta ao espaço original
+  #   phi* = tanh(u_phi*)
+  #   theta* = tanh(u_theta*)
+  phi_star <- tanh(unname(u_star["ar1"]))
+  theta_star <- tanh(unname(u_star["ma1"]))
+
+  # Proteção final
+  if (!is.finite(phi_star) || !is.finite(theta_star)) {
+    return(NULL)
+  }
+
+  c(phi_star = phi_star, theta_star = theta_star)
+}
+
+
 executa_bootstrap <- function(
   serie0,
   coef0,
@@ -118,18 +214,28 @@ executa_bootstrap <- function(
   theta_boot <- rep(NA_real_, B)
 
   for (b in seq_len(B)) {
-    # Gera coeficientes bootstrap sem restrição, o que pode levar a valores inválidos de φ* e θ*.
-    coef_star <- tryCatch(
-      MASS::mvrnorm(1, mu = coef0$coef, Sigma = coef0$vcov),
-      error = function(e) NULL
-    )
-    if (is.null(coef_star) || any(!is.finite(coef_star))) next
+    # Gera coeficientes e adiciona variabilidade
+    if (USAR_TRANSFORMACAO_NO_ESPACO_PARAMETRICO) {
+      # Gera coeficientes bootstrap válidos para ARMA(1,1) com dist N(coef0$coef, coef0$vcov)
+      coef_star <- bootstrap_coef_validos(coef = coef0$coef, matriz_vcov = coef0$vcov)
+      if (is.null(coef_star)) next
 
-    phi_star <- unname(coef_star["ar1"])
-    theta_star <- unname(coef_star["ma1"])
+      phi_star <- unname(coef_star["phi_star"])
+      theta_star <- unname(coef_star["theta_star"])
+    } else {
+      # Gera coeficientes bootstrap sem restrição, o que pode levar a valores inválidos de φ* e θ*.
+      coef_star <- tryCatch(
+        MASS::mvrnorm(1, mu = coef0$coef, Sigma = coef0$vcov),
+        error = function(e) NULL
+      )
+      if (is.null(coef_star) || any(!is.finite(coef_star))) next
 
-    # Valida os coeficientes bootstrap gerados
-    if (!ar_valido(phi_star) || !ma_valido(theta_star)) next
+      phi_star <- unname(coef_star["ar1"])
+      theta_star <- unname(coef_star["ma1"])
+
+      # Valida os coeficientes bootstrap gerados
+      if (!ar_valido(phi_star) || !ma_valido(theta_star)) next
+    }
 
     # Simula série Fase II*
     serie1_b <- tryCatch(
@@ -167,8 +273,7 @@ executa_bootstrap <- function(
 
   if (length(phi_boot) < B * 0.9) {
     warning(sprintf(
-      "Número de bootstrap válidos (%d) é menor que 90%% do total (%d) para MC %d, n0 %d, n1 %d, desvio_phi %.2f, desvio_theta %.2f. Resultados podem ser instáveis.",
-      length(phi_boot), B, mc, n_inicial, sc, desvio_phi, desvio_theta
+      "Número de bootstrap válidos (%d) é menor que 90%% do total (%d)", length(phi_boot), B
     ))
   }
 
@@ -381,10 +486,9 @@ if (length(DADOS_OUT_LIST) == 0L) {
 DADOS_OUT <- rbindlist(DADOS_OUT_LIST, fill = TRUE)
 
 message("Concluído com sucesso.")
-print(head(DADOS_OUT))
 
 
-DADOS_OUT %>%
+DADOS_PLOT <- DADOS_OUT %>%
   mutate(
     parametro_real = paste0("(", phi_real, ", ", theta_real, ")"),
     label = paste0("(", phi_alt, ", ", theta_alt, ")")
@@ -395,7 +499,9 @@ DADOS_OUT %>%
     se = sqrt(proporcao * (1 - proporcao) / MC),
     ic_inf = pmax(0, proporcao - 1.96 * se),
     ic_sup = pmin(1, proporcao + 1.96 * se)
-  ) %>%
+  )
+
+p <- DADOS_PLOT %>%
   ggplot(aes(x = n1, y = proporcao, color = label, fill = label, group = label)) +
   # geom_errorbar(aes(ymin = ic_inf, ymax = ic_sup), width = 5, alpha = 0.6) +
   geom_ribbon(aes(ymin = ic_inf, ymax = ic_sup), alpha = 0.15, color = NA) +
@@ -439,3 +545,5 @@ DADOS_OUT %>%
     axis.text.x = element_text(angle = 45, hjust = 1),
     text = element_text(size = 16)
   )
+
+print(p)
