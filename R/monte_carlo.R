@@ -1,40 +1,28 @@
-# Extrai coeficientes e matriz de covariância
-# TODO: deixar de usar essa função
-arma_coef <- function(modelo) {
-  coefs <- coef(modelo)
-  vc <- vcov(modelo)
-  list(
-    coef = coefs,
-    vcov = vc,
-    vcov_inv = solve(vc)
-  )
-}
-
 seq_novas_observacoes <- function(n_inicial) {
   c(1, round(n_inicial / 2), n_inicial - 1, n_inicial + round(n_inicial / 2))
 }
 
 avalia_um_cenario_fase2 <- function(
-  n_inicial,
   serie_fase1,
   serie_fase2,
-  coef0,
+  modelo_fase1,
   numero_de_novas_observacoes,
   numero_de_boots,
   usar_transformacao
 ) {
-  serie1_controle <- cola_series(
+  serie_fase2_controle <- cola_series(
     serie_fase1 = serie_fase1,
     serie_fase2 = serie_fase2,
     numero_de_novas_observacoes = numero_de_novas_observacoes
   )
 
   # Série de controle: colagem da série de controle da Fase I com as n primeiras observações da Fase II
-  ajuste1 <- fit_arma(serie1_controle, coef0$coef["ar1"], coef0$coef["ma1"], transform.pars = usar_transformacao)
-  if (is.null(ajuste1) || !ajuste1$convergiu) next
-  fit1_controle <- ajuste1$fit
+  cf1 <- coef(modelo_fase1)
+  ajuste_fase2_controle <- fit_arma(serie_fase2_controle, cf1["ar1"], cf1["ma1"], transform.pars = usar_transformacao)
+  if (is.null(ajuste_fase2_controle) || !ajuste_fase2_controle$convergiu) next
+  modelo_fase2_controle <- ajuste_fase2_controle$fit
 
-  coef1_controle <- coef(fit1_controle) |> tryNull()
+  coef1_controle <- coef(modelo_fase2_controle) |> tryNull()
   if (is.null(coef1_controle)) next
 
   coef1_phi <- unname(coef1_controle["ar1"])
@@ -43,16 +31,15 @@ avalia_um_cenario_fase2 <- function(
 
   # Bootstrap para obter distribuição de T² sob H0 (sistema em controle)
   boot <- executa_bootstrap(
-    serie0 = serie_fase1,
-    coef0 = coef0,
-    n_inicial = n_inicial,
+    serie_fase1 = serie_fase1,
+    modelo_fase1 = modelo_fase1,
     numero_de_novas_observacoes = numero_de_novas_observacoes,
     numero_de_boots = numero_de_boots,
     usar_transformacao = usar_transformacao
   )
 
   # Matriz da informação de Fisher da série de controle
-  amostra_vcov <- fit1_controle$var.coef
+  amostra_vcov <- modelo_fase2_controle$var.coef
 
   amostra_vcov_inv <- solve(amostra_vcov) |> tryNull()
   if (is.null(amostra_vcov_inv)) next
@@ -102,23 +89,18 @@ executa_um_mc <- function(
   desvios_theta,
   usar_transformacao
 ) {
-  mc <- execucao
-
   resultados_mc <- list()
   idx_res <- 1L
 
   for (n_inicial in tamanhos_amostrais_iniciais) {
     # Simula série original sob controle (Fase I)
     # Observações nas quais que se assume que o sistema está em controle
-    serie0 <- simula_arma(n_inicial, phi_real, theta_real) |> tryNull()
-    if (is.null(serie0)) next
+    serie_fase1 <- simula_arma(n_inicial, phi_real, theta_real) |> tryNull()
+    if (is.null(serie_fase1)) next
 
-    ajuste0 <- fit_arma(serie0, transform.pars = usar_transformacao)
-    if (is.null(ajuste0) || !ajuste0$convergiu) next
-    fit0 <- ajuste0$fit
-
-    coef0 <- arma_coef(fit0) |> tryNull()
-    if (is.null(coef0)) next
+    ajuste_fase1 <- fit_arma(serie_fase1, transform.pars = usar_transformacao)
+    if (is.null(ajuste_fase1) || !ajuste_fase1$convergiu) next
+    modelo_fase1 <- ajuste_fase1$fit
 
     for (desvio_phi in desvios_phi) {
       for (desvio_theta in desvios_theta) {
@@ -133,22 +115,21 @@ executa_um_mc <- function(
 
         # Simula série alternativa (Fase II)
         # Observações que foram obtidas opós série de controle da Fase I
-        serie1 <- simula_arma(max(seq_colagens), phi_alt, theta_alt) |> tryNull()
-        if (is.null(serie1)) next
+        serie_fase2 <- simula_arma(max(seq_colagens), phi_alt, theta_alt) |> tryNull()
+        if (is.null(serie_fase2)) next
 
         for (numero_de_novas_observacoes in seq_colagens) {
           resultado_cenario <- avalia_um_cenario_fase2(
-            n_inicial = n_inicial,
-            serie_fase1 = serie0,
-            serie_fase2 = serie1,
-            coef0 = coef0,
+            serie_fase1 = serie_fase1,
+            serie_fase2 = serie_fase2,
+            modelo_fase1 = modelo_fase1,
             numero_de_novas_observacoes = numero_de_novas_observacoes,
             numero_de_boots = numero_de_boots,
             usar_transformacao = usar_transformacao
           )
 
           resultados_mc[[idx_res]] <- cbind(
-            mc = mc,
+            mc = execucao,
             phi_real = phi_real,
             theta_real = theta_real,
             phi_alt = phi_alt,

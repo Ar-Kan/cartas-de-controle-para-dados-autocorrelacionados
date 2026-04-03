@@ -35,7 +35,11 @@ fit_arma <- function(serie, phi = NULL, theta = NULL, transform.pars = FALSE) {
     }
   ) |> tryNull()
 
-  if (is.null(fit)) {
+  if (
+    is.null(fit) ||
+      coef(fit) |> tryNull() |> is.null() ||
+      vcov(fit) |> tryNull() |> is.null()
+  ) {
     return(list(
       fit = NULL,
       warnings = avisos,
