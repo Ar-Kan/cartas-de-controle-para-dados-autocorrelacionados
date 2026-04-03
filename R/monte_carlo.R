@@ -1,0 +1,174 @@
+# Extrai coeficientes e matriz de covariância
+# TODO: deixar de usar essa função
+arma_coef <- function(modelo) {
+  coefs <- coef(modelo)
+  vc <- vcov(modelo)
+  list(
+    coef = coefs,
+    vcov = vc,
+    vcov_inv = solve(vc)
+  )
+}
+
+seq_novas_observacoes <- function(n_inicial) {
+  c(1, round(n_inicial / 2), n_inicial - 1, n_inicial + round(n_inicial / 2))
+}
+
+avalia_um_cenario_fase2 <- function(
+  n_inicial,
+  serie_fase1,
+  serie_fase2,
+  coef0,
+  numero_de_novas_observacoes,
+  numero_de_boots,
+  usar_transformacao
+) {
+  serie1_controle <- cola_series(
+    serie_fase1 = serie_fase1,
+    serie_fase2 = serie_fase2,
+    numero_de_novas_observacoes = numero_de_novas_observacoes
+  )
+
+  # Série de controle: colagem da série de controle da Fase I com as n primeiras observações da Fase II
+  ajuste1 <- fit_arma(serie1_controle, coef0$coef["ar1"], coef0$coef["ma1"], transform.pars = usar_transformacao)
+  if (is.null(ajuste1) || !ajuste1$convergiu) next
+  fit1_controle <- ajuste1$fit
+
+  coef1_controle <- coef(fit1_controle) |> tryNull()
+  if (is.null(coef1_controle)) next
+
+  coef1_phi <- unname(coef1_controle["ar1"])
+  coef1_theta <- unname(coef1_controle["ma1"])
+  if (!is.finite(coef1_phi) || !is.finite(coef1_theta)) next
+
+  # Bootstrap para obter distribuição de T² sob H0 (sistema em controle)
+  boot <- executa_bootstrap(
+    serie0 = serie_fase1,
+    coef0 = coef0,
+    n_inicial = n_inicial,
+    numero_de_novas_observacoes = numero_de_novas_observacoes,
+    numero_de_boots = numero_de_boots,
+    usar_transformacao = usar_transformacao
+  )
+
+  # Matriz da informação de Fisher da série de controle
+  amostra_vcov <- fit1_controle$var.coef
+
+  amostra_vcov_inv <- solve(amostra_vcov) |> tryNull()
+  if (is.null(amostra_vcov_inv)) next
+
+  phi_boot_media <- mean(boot$phi_boot)
+  theta_boot_media <- mean(boot$theta_boot)
+
+  # Calcula T² para cada par (φ*, θ*) do bootstrap
+  # T²(x) = (x - mu_boot)' S^{-1} (x - mu_boot)
+  t2_boot <- vapply(
+    seq_along(boot$phi_boot),
+    function(i) {
+      diff_b <- c(boot$phi_boot[i], boot$theta_boot[i]) - c(phi_boot_media, theta_boot_media)
+      as.numeric(t(diff_b) %*% amostra_vcov_inv %*% diff_b)
+    },
+    numeric(1)
+  )
+
+  # Obtém o limite de controle q95(T²)
+  t2_limite <- quantile(t2_boot, probs = 0.95, na.rm = TRUE, names = FALSE)
+
+  diff_controle <- c(coef1_phi, coef1_theta) - c(phi_boot_media, theta_boot_media)
+  t2_controle <- as.numeric(
+    t(diff_controle) %*%
+      amostra_vcov_inv %*%
+      diff_controle
+  )
+
+  esta_fora_de_controle <- t2_controle > t2_limite
+
+  data.table(
+    numero_de_bootstrap_validos = length(t2_boot),
+    fora_de_controle = esta_fora_de_controle,
+    t2_limite = t2_limite,
+    t2_controle = t2_controle
+  )
+}
+
+
+executa_um_mc <- function(
+  execucao,
+  phi_real,
+  theta_real,
+  tamanhos_amostrais_iniciais,
+  numero_de_boots,
+  desvios_phi,
+  desvios_theta,
+  usar_transformacao
+) {
+  mc <- execucao
+
+  resultados_mc <- list()
+  idx_res <- 1L
+
+  for (n_inicial in tamanhos_amostrais_iniciais) {
+    # Simula série original sob controle (Fase I)
+    # Observações nas quais que se assume que o sistema está em controle
+    serie0 <- simula_arma(n_inicial, phi_real, theta_real) |> tryNull()
+    if (is.null(serie0)) next
+
+    ajuste0 <- fit_arma(serie0, transform.pars = usar_transformacao)
+    if (is.null(ajuste0) || !ajuste0$convergiu) next
+    fit0 <- ajuste0$fit
+
+    coef0 <- arma_coef(fit0) |> tryNull()
+    if (is.null(coef0)) next
+
+    for (desvio_phi in desvios_phi) {
+      for (desvio_theta in desvios_theta) {
+        # Altera os parâmetros reais para simular a série alternativa (Fase II)
+        phi_alt <- phi_real + desvio_phi
+        theta_alt <- theta_real + desvio_theta
+
+        if (!ar_valido(phi_alt) || !ma_valido(theta_alt)) next
+
+        # Número de novas observações da Fase II
+        seq_colagens <- seq_novas_observacoes(n_inicial)
+
+        # Simula série alternativa (Fase II)
+        # Observações que foram obtidas opós série de controle da Fase I
+        serie1 <- simula_arma(max(seq_colagens), phi_alt, theta_alt) |> tryNull()
+        if (is.null(serie1)) next
+
+        for (numero_de_novas_observacoes in seq_colagens) {
+          resultado_cenario <- avalia_um_cenario_fase2(
+            n_inicial = n_inicial,
+            serie_fase1 = serie0,
+            serie_fase2 = serie1,
+            coef0 = coef0,
+            numero_de_novas_observacoes = numero_de_novas_observacoes,
+            numero_de_boots = numero_de_boots,
+            usar_transformacao = usar_transformacao
+          )
+
+          resultados_mc[[idx_res]] <- cbind(
+            mc = mc,
+            phi_real = phi_real,
+            theta_real = theta_real,
+            phi_alt = phi_alt,
+            theta_alt = theta_alt,
+            n0 = n_inicial,
+            n1 = numero_de_novas_observacoes,
+            desvio_phi = desvio_phi,
+            desvio_theta = desvio_theta,
+            resultado_cenario
+          )
+
+          idx_res <- idx_res + 1L
+        }
+      }
+    }
+  }
+
+  if (length(resultados_mc) == 0L) {
+    return(data.table())
+  }
+
+  rbindlist(resultados_mc, fill = TRUE)
+}

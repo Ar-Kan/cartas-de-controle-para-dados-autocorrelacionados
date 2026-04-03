@@ -5,9 +5,15 @@
 #' @param ... Argumentos adicionais repassados para `funcao`.
 #'
 #' @return O resultado retornado por `funcao`, ou uma data.table com erro.
-faz_uma_execucao_safe <- function(execucao, funcao, ...) {
+faz_uma_execucao_safe <- function(execucao, funcao, ..., p = NULL) {
   stopifnot(length(execucao) == 1L, is.numeric(execucao) || is.integer(execucao))
   stopifnot(is.function(funcao))
+
+  on.exit({
+    if (!is.null(p)) {
+      p()
+    }
+  }, add = TRUE)
 
   tryCatch(
   {
@@ -121,7 +127,7 @@ execucao_paralela <- function(
   if (is.null(n_processos)) {
     n_processos <- min(
       12L,
-      max(2L, floor(parallelly::availableCores() * 0.6))
+      max(1L, floor(parallelly::availableCores() * 0.6))
     )
   }
 
@@ -129,7 +135,7 @@ execucao_paralela <- function(
 
   message(sprintf("Workers configurados: %d", n_processos))
 
-  # Retorna ao plano já existente quando sai da função
+  # Salva o plano atual e restaura ao final para evitar efeitos colaterais
   plano_antigo <- future::plan()
   on.exit(future::plan(plano_antigo), add = TRUE)
 
@@ -141,7 +147,7 @@ execucao_paralela <- function(
   }
 
   res_lista <- progressr::with_progress({
-    progressr::progressor(steps = n_execucoes)
+    p <- progressr::progressor(steps = n_execucoes)
 
     future.apply::future_lapply(
       X = seq_len(n_execucoes),
@@ -151,7 +157,8 @@ execucao_paralela <- function(
             execucao = execucao,
             funcao = funcao
           ),
-          lista_argumentos
+          lista_argumentos,
+          p = p
         )
 
         do.call(faz_uma_execucao_safe, args)
