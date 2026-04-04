@@ -1,5 +1,3 @@
-source("R/paralelizacao.R") |> try()
-
 testthat::test_that("faz_uma_execucao_safe retorna resultado com coluna execucao", {
 
   f <- function(execucao, a) {

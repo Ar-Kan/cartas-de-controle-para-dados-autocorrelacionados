@@ -1,4 +1,21 @@
-# Simula ARMA(1,1) com burn-in de 200
+#' Simula uma série ARMA(1,1) com burn-in
+#'
+#' Gera uma série ARMA(1,1) via [stats::arima.sim()] e descarta um período
+#' inicial de burn-in para reduzir o efeito das condições iniciais.
+#'
+#' @param n Número de observações desejadas na série retornada.
+#' @param phi Coeficiente autorregressivo AR(1).
+#' @param theta Coeficiente de médias móveis MA(1).
+#'
+#' @return Vetor numérico de comprimento `n`.
+#'
+#' @details
+#' A função simula `200 + n` observações e retorna apenas as `n` últimas.
+#'
+#' @examples
+#' set.seed(42)
+#' x <- simula_arma(n = 100, phi = 0.2, theta = 0.5)
+#' length(x)
 simula_arma <- function(n, phi, theta) {
   obs <- arima.sim(
     n = 200 + n,
@@ -8,13 +25,43 @@ simula_arma <- function(n, phi, theta) {
   tail(obs, n)
 }
 
-# Ajusta ARMA(1,1)
-#
-# Usa uma parametrização alternativa para garantir estacionaridade dos
-# termos AR, e trata a invertibilidade dos MA depois da otimização (invertibility enforcement).
-# NOTA: Não funciona com o método `CSS` puro
-#
-# `CSS-ML`: usa CSS para dar um chute inicial e refina com verossimilhança
+#' Ajusta um modelo ARMA(1,1) sem média
+#'
+#' Ajusta um modelo ARMA(1,1) usando [stats::arima()] com método `"CSS-ML"`.
+#' Warnings do ajuste são capturados e retornados, em vez de serem emitidos
+#' diretamente na console.
+#'
+#' @param serie Vetor numérico ou série temporal.
+#' @param phi Valor inicial opcional para o coeficiente AR(1).
+#' @param theta Valor inicial opcional para o coeficiente MA(1).
+#' @param transform.pars Lógico; repassado para o argumento homônimo de
+#'   [stats::arima()].
+#'
+#' @return Lista com os elementos:
+#' \describe{
+#'   \item{fit}{Objeto retornado por [stats::arima()], ou `NULL` em caso de falha.}
+#'   \item{warnings}{Vetor de caracteres com warnings capturados.}
+#'   \item{convergiu}{`TRUE` quando não houve warnings capturados.}
+#'   \item{erro}{`TRUE` quando houve falha no ajuste ou no pós-processamento.}
+#' }
+#'
+#' @details
+#' A função:
+#' \itemize{
+#'   \item ajusta `order = c(1, 0, 1)`
+#'   \item usa `include.mean = FALSE`
+#'   \item usa `method = "CSS-ML"`
+#'   \item usa `optim.method = "BFGS"`
+#' }
+#'
+#' Se o ajuste falhar, ou se `coef()`/`vcov()` falharem, o retorno marca
+#' `erro = TRUE` e `convergiu = FALSE`.
+#'
+#' @examples
+#' set.seed(42)
+#' serie <- simula_arma(200, 0.2, 0.5)
+#' ajuste <- fit_arma(serie)
+#' ajuste$erro
 fit_arma <- function(serie, phi = NULL, theta = NULL, transform.pars = FALSE) {
   avisos <- character()
 
@@ -56,17 +103,66 @@ fit_arma <- function(serie, phi = NULL, theta = NULL, transform.pars = FALSE) {
   )
 }
 
-# Testa estacionaridade (para φ)
+
+#' Verifica se um coeficiente AR(1) é estacionário
+#'
+#' @param phi Valor candidato para o coeficiente AR(1).
+#'
+#' @return `TRUE` se o parâmetro for finito e corresponder a um modelo
+#'   estacionário; `FALSE` caso contrário.
+#'
+#' @details
+#' Para AR(1), a condição de estacionaridade equivale a exigir que as raízes
+#' do polinômio autorregressivo estejam fora do círculo unitário.
+#'
+#' @examples
+#' ar_valido(0.5)
+#' ar_valido(1.2)
 ar_valido <- function(phi) {
   is.finite(phi) && all(Mod(polyroot(c(1, -phi))) > 1)
 }
 
-# Testa invertibilidade (para θ)
+
+#' Verifica se um coeficiente MA(1) é invertível
+#'
+#' @param theta Valor candidato para o coeficiente MA(1).
+#'
+#' @return `TRUE` se o parâmetro for finito e corresponder a um modelo
+#'   invertível; `FALSE` caso contrário.
+#'
+#' @details
+#' Para MA(1), a invertibilidade equivale a exigir que as raízes do polinômio
+#' de médias móveis estejam fora do círculo unitário.
+#'
+#' @examples
+#' ma_valido(0.5)
+#' ma_valido(1.2)
 ma_valido <- function(theta) {
   is.finite(theta) && all(Mod(polyroot(c(1, theta))) > 1)
 }
 
-# Colagem para série bootstrap: mantém os últimos de Fase I e os primeiros de Fase II*
+#' Combina uma série de Fase I com novas observações da Fase II
+#'
+#' Constrói uma nova série mantendo as observações mais recentes da Fase I e
+#' substituindo as últimas posições por observações iniciais da Fase II.
+#'
+#' @param serie_fase1 Vetor numérico da Fase I.
+#' @param serie_fase2 Vetor numérico da Fase II.
+#' @param numero_de_novas_observacoes Número de observações da Fase II a serem
+#'   incorporadas.
+#'
+#' @return Vetor numérico com o mesmo comprimento de `serie_fase1`.
+#'
+#' @details
+#' Se `numero_de_novas_observacoes >= length(serie_fase1)`, a função retorna
+#' apenas as primeiras `length(serie_fase1)` observações de `serie_fase2`.
+#'
+#' @examples
+#' cola_series(
+#'   serie_fase1 = 1:5,
+#'   serie_fase2 = 101:110,
+#'   numero_de_novas_observacoes = 2
+#' )
 cola_series <- function(serie_fase1, serie_fase2, numero_de_novas_observacoes) {
   n_inicial <- length(serie_fase1)
 
@@ -84,53 +180,129 @@ cola_series <- function(serie_fase1, serie_fase2, numero_de_novas_observacoes) {
   out
 }
 
-
-# Gera coeficientes bootstrap válidos para ARMA(1,1) com dist N(coef, matriz_vcov).
-# Para séries de ordens maiores devemos usarmor PACF como o `stats::arima()` faz.
-#
-# A operação é feita em 4 etapas:
-# 1. Transformação para o espaço onde os parâmetros são irrestritos (usando atanh para mapear (-1, 1) para ℝ).
-# 2. Ajuste da covariância no espaço transformado usando o método delta.
-# 3. Sorteio de um novo vetor de parâmetros no espaço transformado.
-# 4. Transformação de volta para o espaço original usando tanh.
-#
-# Método delta para aproximar a covariância no espaço transformado.
-# Seja J a jacobiana de g avalidada em coef, temos que se:
-#   u = g(coef)
-# então:
-#   Var(u) ~= J Var(coef) J'
-# Onde:
-#   g(phi) = atanh(phi) => d/dphi atanh(phi) = 1 / (1 - phi^2)
-#   g(theta) = atanh(theta) => d/dtheta atanh(theta) = 1 / (1 - theta^2)
-#
-# Como a transformação é separada componente a componente, a jacobiana é diagonal.
-bootstrap_coef_validos <- function(coef, matriz_vcov, eps = 1e-6) {
+#' Gera coeficientes bootstrap válidos para ARMA(1,1)
+#'
+#' Gera um novo par de coeficientes AR(1) e MA(1) a partir de uma aproximação
+#' normal multivariada, utilizando uma transformação que garante que os valores
+#' finais permaneçam no intervalo admissível `(-1, 1)`.
+#'
+#' @param coef Vetor nomeado contendo ao menos `ar1` e `ma1`.
+#' @param matriz_vcov Matriz de covariância associada aos coeficientes.
+#' @param eps Pequeno valor positivo utilizado para evitar avaliação exatamente
+#'   na fronteira de `-1` e `1`.
+#'
+#' @return
+#' Vetor nomeado com os elementos `phi_star` e `theta_star`, ou `NULL` quando:
+#' \itemize{
+#'   \item a matriz de covariância for inválida
+#'   \item os coeficientes forem não finitos
+#'   \item a matriz transformada não for positiva-definida
+#' }
+#'
+#' @details
+#' O método consiste em transformar os coeficientes para um espaço irrestrito,
+#' realizar o sorteio nesse espaço, e então retornar ao espaço original.
+#'
+#' Seja o vetor de parâmetros:
+#' \deqn{
+#'   \boldsymbol{\beta} = (\phi, \theta)
+#' }
+#'
+#' A transformação é aplicada componente a componente:
+#' \deqn{
+#'   u_{\phi} = \operatorname{atanh}(\phi), \quad
+#'   u_{\theta} = \operatorname{atanh}(\theta)
+#' }
+#'
+#' Em forma vetorial:
+#' \deqn{
+#'   \mathbf{u} = g(\boldsymbol{\beta})
+#' }
+#'
+#' onde \eqn{g} atua separadamente em cada componente.
+#'
+#' A função \eqn{\operatorname{atanh}} mapeia o intervalo \eqn{(-1, 1)} em
+#' \eqn{\mathbb{R}}, permitindo modelar os parâmetros com distribuição normal.
+#'
+#' \strong{Aproximação da covariância (método delta)}
+#'
+#' Seja \eqn{J} a jacobiana da transformação \eqn{g} avaliada em
+#' \eqn{\boldsymbol{\beta}}. Então:
+#' \deqn{
+#'   \operatorname{Var}(\mathbf{u}) \approx
+#'   J \, \operatorname{Var}(\boldsymbol{\beta}) \, J'
+#' }
+#'
+#' Como a transformação é separável por componente, a jacobiana é diagonal:
+#' \deqn{
+#'   J =
+#'   \begin{pmatrix}
+#'     \frac{1}{1 - \phi^2} & 0 \\
+#'     0 & \frac{1}{1 - \theta^2}
+#'   \end{pmatrix}
+#' }
+#'
+#' \strong{Geração bootstrap}
+#'
+#' No espaço transformado:
+#' \deqn{
+#'   \mathbf{u}^* \sim \mathcal{N}(\boldsymbol{\mu}_u, \Sigma_u)
+#' }
+#'
+#' onde:
+#' \itemize{
+#'   \item \eqn{\boldsymbol{\mu}_u = g(\boldsymbol{\beta})}
+#'   \item \eqn{\Sigma_u = J \, \operatorname{Var}(\boldsymbol{\beta}) \, J'}
+#' }
+#'
+#' \strong{Transformação inversa}
+#'
+#' Os coeficientes são retornados ao espaço original via:
+#' \deqn{
+#'   \phi^* = \tanh(u_{\phi}^*), \quad
+#'   \theta^* = \tanh(u_{\theta}^*)
+#' }
+#'
+#' garantindo que ambos permaneçam no intervalo `(-1, 1)`.
+#'
+#' Antes da transformação e depois de aplicar a função inversa, há uma etapa de truncamento
+#' para garantir que os valores permaneçam estritamente dentro do intervalo `(-1, 1)`,
+#' evitando problemas numéricos associados a valores exatamente na fronteira.
+#'
+#' @examples
+#' set.seed(42)
+#'
+#' coef <- c(ar1 = 0.2, ma1 = 0.5)
+#' vc <- matrix(c(0.01, 0, 0, 0.01), 2, 2)
+#'
+#' bootstrap_coef_validos(coef, vc)
+amostrar_coef_validos <- function(coef, matriz_vcov, eps = 1e-6) {
   # Validações
   if (!is.matrix(matriz_vcov) || any(!is.finite(matriz_vcov))) {
     return(NULL)
   }
 
-  phi0 <- unname(coef["ar1"])
-  theta0 <- unname(coef["ma1"])
+  phi <- unname(coef["ar1"])
+  theta <- unname(coef["ma1"])
 
-  if (!is.finite(phi0) || !is.finite(theta0)) {
+  if (!is.finite(phi) || !is.finite(theta)) {
     return(NULL)
   }
 
   # proteção contra valores exatamente na fronteira
-  phi0 <- max(min(phi0, 1 - eps), -1 + eps)
-  theta0 <- max(min(theta0, 1 - eps), -1 + eps)
+  phi <- max(min(phi, 1 - eps), -1 + eps)
+  theta <- max(min(theta, 1 - eps), -1 + eps)
 
   # Média no espaço transformado
   mu_u <- c(
-    ar1 = atanh(phi0),
-    ma1 = atanh(theta0)
+    ar1 = atanh(phi),
+    ma1 = atanh(theta)
   )
 
-  # Jacobiana da transformação g no ponto coef
+  # Jacobiana da transformação g no ponto \beta
   J <- diag(c(
-    1 / (1 - phi0^2),
-    1 / (1 - theta0^2)
+    1 / (1 - phi^2),
+    1 / (1 - theta^2)
   ))
 
   Sigma_u <- J %*% matriz_vcov %*% t(J)
@@ -166,6 +338,10 @@ bootstrap_coef_validos <- function(coef, matriz_vcov, eps = 1e-6) {
   if (!is.finite(phi_star) || !is.finite(theta_star)) {
     return(NULL)
   }
+
+  # Proteção final contra saturação numérica em +/-1
+  phi_star <- max(min(phi_star, 1 - eps), -1 + eps)
+  theta_star <- max(min(theta_star, 1 - eps), -1 + eps)
 
   c(phi_star = phi_star, theta_star = theta_star)
 }

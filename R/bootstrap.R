@@ -6,7 +6,7 @@ gera_coeficientes <- function(
 ) {
   if (usar_transformacao) {
     # Gera coeficientes bootstrap válidos para ARMA(1,1)
-    coef_star <- bootstrap_coef_validos(coef = coef_fase1, matriz_vcov = vcov_fase1)
+    coef_star <- amostrar_coef_validos(coef = coef_fase1, matriz_vcov = vcov_fase1)
     if (is.null(coef_star)) return(NULL)
 
     phi_star <- unname(coef_star["phi_star"])
