@@ -126,8 +126,37 @@ testthat::test_that("consolida_resultados_paralelos falha sem resultados válido
   )
 })
 
+testthat::test_that("execucao_paralela executa função e consolida resultados", {
+  plano_atual <- "plano-original"
 
-testthat::test_that("execucao_paralela executa função em paralelo e consolida", {
+  testthat::local_mocked_bindings(
+    .paralelo_available_cores = function() 10L,
+    .paralelo_definir_plano = function(n_processos) {
+      plano_atual <<- list(nome = "multisession", workers = n_processos)
+      invisible(NULL)
+    },
+    .paralelo_configurar_handlers = function() invisible(NULL),
+    .paralelo_com_progresso = function(expr) force(expr),
+    .paralelo_criar_progressor = function(n_execucoes) {
+      force(n_execucoes)
+      function(...) invisible(NULL)
+    },
+    .paralelo_aplicar = function(X, FUN, seed) {
+      base::lapply(X, FUN)
+    },
+    .package = "ceqautocorrelacionados"
+  )
+
+  testthat::local_mocked_bindings(
+    plan = function(strategy, ...) {
+      if (missing(strategy)) {
+        return(plano_atual)
+      }
+      plano_atual <<- strategy
+      invisible(plano_atual)
+    },
+    .package = "future"
+  )
 
   f <- function(execucao, multiplicador) {
     data.table::data.table(
@@ -136,24 +165,57 @@ testthat::test_that("execucao_paralela executa função em paralelo e consolida"
     )
   }
 
-  out <- execucao_paralela(
-    n_execucoes = 4,
-    funcao = f,
-    lista_argumentos = list(multiplicador = 2),
-    n_processos = 2,
-    seed = TRUE
+  suppressMessages(
+    out <- execucao_paralela(
+      n_execucoes = 4,
+      funcao = f,
+      lista_argumentos = list(multiplicador = 2),
+      n_processos = 2,
+      seed = TRUE
+    )
   )
 
   data.table::setorder(out, execucao)
 
   testthat::expect_true(data.table::is.data.table(out))
-  testthat::expect_equal(nrow(out), 4L)
   testthat::expect_equal(out$execucao, 1:4)
   testthat::expect_equal(out$valor, c(2, 4, 6, 8))
+
+  # garante que o on.exit restaurou o plano original
+  testthat::expect_identical(plano_atual, "plano-original")
 })
 
+testthat::test_that("execucao_paralela preserva resultados válidos quando algumas execuções falham", {
+  plano_atual <- "plano-original"
 
-testthat::test_that("execucao_paralela mantém resultados válidos mesmo com falhas em alguns workers", {
+  testthat::local_mocked_bindings(
+    .paralelo_available_cores = function() 10L,
+    .paralelo_definir_plano = function(n_processos) {
+      plano_atual <<- list(nome = "multisession", workers = n_processos)
+      invisible(NULL)
+    },
+    .paralelo_configurar_handlers = function() invisible(NULL),
+    .paralelo_com_progresso = function(expr) force(expr),
+    .paralelo_criar_progressor = function(n_execucoes) {
+      force(n_execucoes)
+      function(...) invisible(NULL)
+    },
+    .paralelo_aplicar = function(X, FUN, seed) {
+      base::lapply(X, FUN)
+    },
+    .package = "ceqautocorrelacionados"
+  )
+
+  testthat::local_mocked_bindings(
+    plan = function(strategy, ...) {
+      if (missing(strategy)) {
+        return(plano_atual)
+      }
+      plano_atual <<- strategy
+      invisible(plano_atual)
+    },
+    .package = "future"
+  )
 
   f <- function(execucao) {
     if (execucao %% 2 == 0) {
@@ -167,11 +229,13 @@ testthat::test_that("execucao_paralela mantém resultados válidos mesmo com fal
   }
 
   testthat::expect_warning(
-    out <- execucao_paralela(
-      n_execucoes = 5,
-      funcao = f,
-      n_processos = 2,
-      seed = TRUE
+    suppressMessages(
+      out <- execucao_paralela(
+        n_execucoes = 5,
+        funcao = f,
+        n_processos = 2,
+        seed = TRUE
+      )
     ),
     "Ocorreram erros"
   )
@@ -180,4 +244,7 @@ testthat::test_that("execucao_paralela mantém resultados válidos mesmo com fal
 
   testthat::expect_equal(out$execucao, c(1, 3, 5))
   testthat::expect_equal(out$valor, c(1, 3, 5))
+
+  # garante restauração do plano mesmo com warning/erros parciais
+  testthat::expect_identical(plano_atual, "plano-original")
 })

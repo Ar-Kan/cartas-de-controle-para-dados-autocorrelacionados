@@ -127,7 +127,7 @@ execucao_paralela <- function(
   if (is.null(n_processos)) {
     n_processos <- min(
       12L,
-      max(1L, floor(parallelly::availableCores() * 0.6))
+      max(1L, floor(.paralelo_available_cores() * 0.6))
     )
   }
 
@@ -139,17 +139,13 @@ execucao_paralela <- function(
   plano_antigo <- future::plan()
   on.exit(future::plan(plano_antigo), add = TRUE)
 
-  future::plan(future::multisession, workers = n_processos)
-  if (requireNamespace("progress", quietly = TRUE)) {
-    progressr::handlers("progress")
-  } else {
-    progressr::handlers("txtprogressbar")
-  }
+  .paralelo_definir_plano(n_processos)
+  .paralelo_configurar_handlers()
 
-  res_lista <- progressr::with_progress({
-    p <- progressr::progressor(steps = n_execucoes)
+  res_lista <- .paralelo_com_progresso({
+    p <- .paralelo_criar_progressor(n_execucoes)
 
-    future.apply::future_lapply(
+    .paralelo_aplicar(
       X = seq_len(n_execucoes),
       FUN = function(execucao) {
         args <- c(
@@ -163,9 +159,47 @@ execucao_paralela <- function(
 
         do.call(faz_uma_execucao_safe, args)
       },
-      future.seed = seed
+      seed = seed
     )
   })
 
   consolida_resultados_paralelos(res_lista)
+}
+
+# Helper para simplificar testes
+.paralelo_definir_plano <- function(n_processos) {
+  future::plan(future::multisession, workers = n_processos)
+}
+
+# Helper para simplificar testes
+.paralelo_configurar_handlers <- function() {
+  if (requireNamespace("progress", quietly = TRUE)) {
+    progressr::handlers("progress")
+  } else {
+    progressr::handlers("txtprogressbar")
+  }
+}
+
+# Helper para simplificar testes
+.paralelo_criar_progressor <- function(n_execucoes) {
+  progressr::progressor(steps = n_execucoes)
+}
+
+# Helper para simplificar testes
+.paralelo_com_progresso <- function(expr) {
+  progressr::with_progress(expr)
+}
+
+# Helper para simplificar testes
+.paralelo_aplicar <- function(X, FUN, seed) {
+  future.apply::future_lapply(
+    X = X,
+    FUN = FUN,
+    future.seed = seed
+  )
+}
+
+# Helper para simplificar testes
+.paralelo_available_cores <- function() {
+  parallelly::availableCores()
 }
