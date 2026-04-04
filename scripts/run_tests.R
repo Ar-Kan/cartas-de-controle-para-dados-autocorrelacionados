@@ -8,5 +8,4 @@ if (requireNamespace("future", quietly = TRUE)) {
   future::plan(future::sequential)
 }
 
-devtools::load_all()
 devtools::test()
