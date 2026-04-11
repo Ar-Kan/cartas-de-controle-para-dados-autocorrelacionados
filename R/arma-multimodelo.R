@@ -11,7 +11,7 @@ graus_de_liberdade <- function(max_p, max_q) {
   modelos_df[!(modelos_df$p == 0 & modelos_df$q == 0),]
 }
 
-# Função para calcular pesos de Akaike a partir de um vetor de critérios de informação (AIC, BIC, etc.)
+# Função para calcular pesos de Akaike a partir de um vetor de critérios de informação (IC) oriundo de AIC, BIC, etc.
 # A função lida com valores de IC que podem ser Inf ou NA, atribuindo peso zero a esses casos e normalizando os pesos válidos para somarem 1.
 # O cálculo é baseado na diferença entre cada IC e o menor IC válido, utilizando a fórmula:
 # \deqn{
@@ -46,16 +46,30 @@ calcular_pesos <- function(ics) {
   return(pesos)
 }
 
+modelo_ic <- function(modelo, criterio) {
+  if (is.null(modelo)) return(Inf)
+
+  if (criterio == "aic") {
+    return(modelo$aic)
+  } else if (criterio == "aicc") {
+    return(modelo$aicc)
+  } else if (criterio == "bic") {
+    return(modelo$bic)
+  } else {
+    stop("Critério de informação desconhecido: ", criterio)
+  }
+}
+
 # Função para ajustar modelos ARMA(p, q) e calcular o critério de informação
-# Retorna uma lista com os modelos ajustados, seus critérios de informação, pesos de Akaike e os graus de liberdade
+# Retorna os modelos ajustados, seus critérios de informação, pesos de Akaike e os graus de liberdade
 # Se cutoff for fornecido, filtra os modelos com base na diferença do critério de informação em relação ao melhor modelo e recalcula os pesos de Akaike para os modelos filtrados
 ajustar_modelos <- function(serie, max_p, max_q, criterio = "aic", cutoff = NULL) {
   modelos_df <- graus_de_liberdade(max_p, max_q)
 
   ics <- rep(Inf, nrow(modelos_df))
   resultados <- vector("list", nrow(modelos_df))
+  convergiu <- rep(FALSE, nrow(modelos_df))
 
-  #i=1
   for (i in 1:nrow(modelos_df)) {
     p <- modelos_df$p[i]
     q <- modelos_df$q[i]
@@ -63,34 +77,35 @@ ajustar_modelos <- function(serie, max_p, max_q, criterio = "aic", cutoff = NULL
     tryCatch({
       modelo <- fit_modelo(serie, p, q)
       resultados[[i]] <- modelo
-      ics[i] <- modelo[[criterio]]
+      ics[i] <- modelo_ic(modelo, criterio)
+      convergiu[i] <- TRUE
     }, error = function(e) {
     })
   }
 
-  # Calcular pesos de Akaike
-  pesos <- calcular_pesos(ics)
+  df <- modelos_df |>
+    dplyr::mutate(
+      modelo = resultados,
+      ic = ics,
+      convergiu = convergiu
+    ) |>
+    dplyr::filter(convergiu) |>
+    dplyr::mutate(peso = calcular_pesos(ic))
 
-  if (is.null(cutoff)) {
-    list(
-      modelos = resultados,
-      ics = ics,
-      pesos = pesos,
-      modelos_df = modelos_df
-    )
+  if (!is.null(cutoff)) {
+    df <- df |>
+      dplyr::mutate(delta_ic = ic - min(ic, na.rm = TRUE)) |>
+      dplyr::filter(delta_ic < cutoff) |>
+      dplyr::mutate(peso = calcular_pesos(ic)) |>
+      dplyr::select(-delta_ic)
   }
-  else {
-    delta_ic <- ics - min(ics, na.rm = TRUE)
-    substantial <- which(delta_ic < cutoff)
 
-    ics_filtrados <- ics[substantial]
-    pesos_filtrados <- calcular_pesos(ics_filtrados)
-
-    list(
-      modelos = resultados[substantial],
-      ics = ics_filtrados,
-      pesos = pesos_filtrados,
-      modelos_df = modelos_df[substantial,]
+  list(
+    serie = serie,
+    modelos = df,
+    meta = list(
+      criterio = criterio,
+      cutoff = cutoff
     )
-  }
+  )
 }
