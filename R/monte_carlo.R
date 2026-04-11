@@ -44,38 +44,15 @@ avalia_um_cenario_fase2 <- function(
   amostra_vcov_inv <- solve(amostra_vcov) |> tryNull()
   if (is.null(amostra_vcov_inv)) next
 
-  phi_boot_media <- mean(boot$phi_boot)
-  theta_boot_media <- mean(boot$theta_boot)
-
-  # Calcula T² para cada par (φ*, θ*) do bootstrap
-  # T²(x) = (x - mu_boot)' S^{-1} (x - mu_boot)
-  t2_boot <- vapply(
-    seq_along(boot$phi_boot),
-    function(i) {
-      diff_b <- c(boot$phi_boot[i], boot$theta_boot[i]) - c(phi_boot_media, theta_boot_media)
-      as.numeric(t(diff_b) %*% amostra_vcov_inv %*% diff_b)
-    },
-    numeric(1)
+  t2_resultado <- t2_hotelling_boot(
+    phi_boot = boot$phi_boot,
+    theta_boot = boot$theta_boot,
+    phi = coef1_phi,
+    theta = coef1_theta,
+    vcov_inv = amostra_vcov_inv
   )
 
-  # Obtém o limite de controle q95(T²)
-  t2_limite <- quantile(t2_boot, probs = 0.95, na.rm = TRUE, names = FALSE)
-
-  diff_controle <- c(coef1_phi, coef1_theta) - c(phi_boot_media, theta_boot_media)
-  t2_controle <- as.numeric(
-    t(diff_controle) %*%
-      amostra_vcov_inv %*%
-      diff_controle
-  )
-
-  esta_fora_de_controle <- t2_controle > t2_limite
-
-  data.table(
-    numero_de_bootstrap_validos = length(t2_boot),
-    fora_de_controle = esta_fora_de_controle,
-    t2_limite = t2_limite,
-    t2_controle = t2_controle
-  )
+  t2_resultado
 }
 
 
@@ -148,8 +125,8 @@ executa_um_mc <- function(
   }
 
   if (length(resultados_mc) == 0L) {
-    return(data.table())
+    return(data.table::data.table())
   }
 
-  rbindlist(resultados_mc, fill = TRUE)
+  data.table::rbindlist(resultados_mc, fill = TRUE)
 }
