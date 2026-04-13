@@ -60,6 +60,15 @@ modelo_ic <- function(modelo, criterio) {
   }
 }
 
+# Função para amostrar um modelo com base nos pesos de Akaike
+# Filtra os modelos com pesos finitos e positivos, e então amostra um modelo aleatoriamente usando os pesos como probabilidades de seleção
+# Retorna o modelo selecionado, ou NULL se não houver modelos válidos para amostragem
+amostrar_modelo <- function(modelos) {
+  modelos |>
+    dplyr::slice_sample(n = 1, weight_by = peso) |>
+    purrr::pluck("modelo", 1)
+}
+
 # Função para ajustar modelos ARMA(p, q) e calcular o critério de informação
 # Retorna os modelos ajustados, seus critérios de informação, pesos de Akaike e os graus de liberdade
 # Se cutoff for fornecido, filtra os modelos com base na diferença do critério de informação em relação ao melhor modelo e recalcula os pesos de Akaike para os modelos filtrados
@@ -90,7 +99,12 @@ ajustar_modelos <- function(serie, max_p, max_q, criterio = "aic", cutoff = NULL
       convergiu = convergiu
     ) |>
     dplyr::filter(convergiu) |>
-    dplyr::mutate(peso = calcular_pesos(ic))
+    dplyr::mutate(peso = calcular_pesos(ic))|>
+    dplyr::filter(is.finite(peso), peso > 0)
+
+  if (nrow(df) == 0) {
+    stop("Nenhum modelo convergiu ou teve IC finito. Verifique os dados e os parâmetros de ajuste.")
+  }
 
   if (!is.null(cutoff)) {
     df <- df |>
@@ -105,7 +119,9 @@ ajustar_modelos <- function(serie, max_p, max_q, criterio = "aic", cutoff = NULL
     modelos = df,
     meta = list(
       criterio = criterio,
-      cutoff = cutoff
+      cutoff = cutoff,
+      max_p = max_p,
+      max_q = max_q
     )
   )
 }
