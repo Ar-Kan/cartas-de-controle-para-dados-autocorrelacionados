@@ -248,3 +248,63 @@ testthat::test_that("execucao_paralela preserva resultados válidos quando algum
   # garante restauração do plano mesmo com warning/erros parciais
   testthat::expect_identical(plano_atual, "plano-original")
 })
+
+testthat::test_that("execucao_paralela aceita lista_argumentos com nome p sem colidir com progresso", {
+  plano_atual <- "plano-original"
+  progresso_sinalizado <- 0L
+
+  testthat::local_mocked_bindings(
+    .paralelo_available_cores = function() 10L,
+    .paralelo_definir_plano = function(n_processos) {
+      plano_atual <<- list(nome = "multisession", workers = n_processos)
+      invisible(NULL)
+    },
+    .paralelo_configurar_handlers = function() invisible(NULL),
+    .paralelo_com_progresso = function(expr) force(expr),
+    .paralelo_criar_progressor = function(n_execucoes) {
+      force(n_execucoes)
+      function(...) {
+        progresso_sinalizado <<- progresso_sinalizado + 1L
+        invisible(NULL)
+      }
+    },
+    .paralelo_aplicar = function(X, FUN, seed) {
+      base::lapply(X, FUN)
+    },
+    .package = "ceqautocorrelacionados"
+  )
+
+  testthat::local_mocked_bindings(
+    plan = function(strategy, ...) {
+      if (missing(strategy)) {
+        return(plano_atual)
+      }
+      plano_atual <<- strategy
+      invisible(plano_atual)
+    },
+    .package = "future"
+  )
+
+  f <- function(execucao, p, q) {
+    data.table::data.table(
+      execucao = execucao,
+      valor = execucao + p + q
+    )
+  }
+
+  suppressMessages(
+    out <- execucao_paralela(
+      n_execucoes = 3,
+      funcao = f,
+      lista_argumentos = list(p = 2, q = 1),
+      n_processos = 2,
+      seed = TRUE
+    )
+  )
+
+  data.table::setorder(out, execucao)
+
+  testthat::expect_equal(out$valor, c(4, 5, 6))
+  testthat::expect_equal(progresso_sinalizado, 3L)
+  testthat::expect_identical(plano_atual, "plano-original")
+})

@@ -5,13 +5,13 @@
 #' @param ... Argumentos adicionais repassados para `funcao`.
 #'
 #' @return O resultado retornado por `funcao`, ou uma data.table com erro.
-faz_uma_execucao_safe <- function(execucao, funcao, ..., p = NULL) {
+faz_uma_execucao_safe <- function(execucao, funcao, ..., .progress_tick = NULL) {
   stopifnot(length(execucao) == 1L, is.numeric(execucao) || is.integer(execucao))
   stopifnot(is.function(funcao))
 
   on.exit({
-    if (!is.null(p)) {
-      p()
+    if (!is.null(.progress_tick)) {
+      .progress_tick()
     }
   }, add = TRUE)
 
@@ -151,10 +151,10 @@ execucao_paralela <- function(
         args <- c(
           list(
             execucao = execucao,
-            funcao = funcao
+            funcao = funcao,
+            .progress_tick = p
           ),
-          lista_argumentos,
-          p = p
+          lista_argumentos
         )
 
         do.call(faz_uma_execucao_safe, args)
@@ -182,7 +182,10 @@ execucao_paralela <- function(
 
 # Helper para simplificar testes
 .paralelo_criar_progressor <- function(n_execucoes) {
-  progressr::progressor(steps = n_execucoes)
+  progressr::progressor(
+    steps = n_execucoes,
+    on_exit = FALSE
+  )
 }
 
 # Helper para simplificar testes
