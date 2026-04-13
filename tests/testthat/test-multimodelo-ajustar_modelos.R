@@ -101,6 +101,8 @@ testthat::test_that("ajustar_modelos retorna estrutura esperada sem cutoff", {
   testthat::expect_type(res$meta, "list")
   testthat::expect_equal(res$meta$criterio, "aic")
   testthat::expect_null(res$meta$cutoff)
+  testthat::expect_equal(res$meta$max_p, 1)
+  testthat::expect_equal(res$meta$max_q, 1)
 
   testthat::expect_s3_class(res$modelos, "data.frame")
   testthat::expect_named(
@@ -143,6 +145,8 @@ testthat::test_that("ajustar_modelos com cutoff filtra modelos e recalcula pesos
   )
 
   testthat::expect_equal(res_cut$meta$cutoff, 2)
+  testthat::expect_equal(res_cut$meta$max_p, 2)
+  testthat::expect_equal(res_cut$meta$max_q, 2)
   testthat::expect_equal(nrow(res_cut$modelos), length(idx_cut))
   testthat::expect_true(all(res_cut$modelos$peso >= 0))
   testthat::expect_equal(sum(res_cut$modelos$peso), 1, tolerance = 1e-8)
